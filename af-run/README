@@ -1,0 +1,10 @@
+
+[TOY]
+debug.sh
+debug-translate.sh
+
+[IWSLT15]
+train-combine.sh
+translate-combine.sh
+
+

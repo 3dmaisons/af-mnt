@@ -1,0 +1,43 @@
+Note:
+
+processes file dir: iwslt15_en_fr
+
+pre-processing using script prepare-iwslt15en2fr.sh
+modified from facebook research (fairseq) bash script for wmt processsing
+
+differences from fairseq:
+1. using iwslt15 instead of wmt14
+2. not using bpe (not using word piece model for simplicity)
+3. customised generation of dictionary
+
+
+Dir: iwslt15_en_fr/
+
+
+train files
+----------------
+train.tags.en-fr.en
+train.tags.en-fr.en
+
+dictionary
+---------------
+dict.50k.en
+dict.50k.fr
+
+dev files
+---------------
+IWSLT15.TED.dev2010.en-fr.en
+IWSLT15.TED.dev2010.en-fr.fr
+IWSLT15.TED.tst2010.en-fr.en
+IWSLT15.TED.tst2010.en-fr.fr
+IWSLT15.TED.tst2011.en-fr.en
+IWSLT15.TED.tst2011.en-fr.fr
+IWSLT15.TED.tst2012.en-fr.en [used]
+IWSLT15.TED.tst2012.en-fr.fr [used]
+
+test files
+---------------
+IWSLT15.TED.tst2013.en-fr.en
+IWSLT15.TED.tst2013.en-fr.en
+
+

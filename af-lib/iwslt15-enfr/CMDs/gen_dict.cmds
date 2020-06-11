@@ -1,0 +1,42 @@
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.fr iwslt15_en_fr/dict.50k.fr 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.fr iwslt15_en_fr/dict.50k.fr 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.en iwslt15_en_fr/dict.50k.en 50000
+------------------------------
+------------------------------
+python ./local/py-tools/gen_dict.py iwslt15_en_fr/train.tags.en-fr.fr iwslt15_en_fr/dict.50k.fr 50000
+------------------------------
