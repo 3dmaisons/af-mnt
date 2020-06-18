@@ -7,9 +7,10 @@ export PATH=/home/mifs/ytl28/anaconda3/bin/:$PATH
 # /home/mifs/ytl28/bin:/home/mifs/ytl28/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:$PATH
 # export PATH=/home/mifs/ytl28/anaconda3/bin/:/home/mifs/ytl28/anaconda/bin:/home/mifs/ytl28/local/bin:/home/mifs/ytl28/anaconda3/condabin:/home/mifs/ytl28/bin:/home/mifs/ytl28/.local/bin:$PATH
 
+AIR_FORCE_GPU=0
 export MANU_CUDA_DEVICE=0 #note on nausicaa no.2 is no.0
 # select gpu when not on air
-if [[ "$HOSTNAME" != *"air"* ]]; then
+if [[ "$HOSTNAME" != *"air"* ]]  || [ $AIR_FORCE_GPU -eq 1 ]; then
   X_SGE_CUDA_DEVICE=$MANU_CUDA_DEVICE
 fi
 export CUDA_VISIBLE_DEVICES=$X_SGE_CUDA_DEVICE
@@ -36,15 +37,19 @@ export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
 MODE=translate # train translate
-# SAVE_DIR=results/models-v9enfr/aaf-v0002-tf/
+# TRANSLATE_EPOCH=20
+# SAVE_DIR=results/models-v9enfr/aaf-v0012-af-masksrc/
+# SAVE_DIR=results/models-v9enfr/aaf-v0013-af-fixkl/
+# SAVE_DIR=results/models-v9enfr/aaf-v0013-af-debug/
+# SAVE_DIR=results/models-v9enfr/aaf-v0013-af/
+# SAVE_DIR=results/models-v9enfr/aaf-v0013-aftf/
+SAVE_DIR=results/models-v9enfr/aaf-v0013-aftf-bs128/
+LR=0.002
 
-SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-v2/
-# echo batch_size is 50, not 128, for comparison with AF!!!
+# SAVE_DIR=results/models-v9enfr/aaf-v0013-aftf-checkRunAway/
+# LR=0.008
 
-# SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-asup/
-# SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-checkRunAway/
-# TRANSLATE_EPOCH=30
-
+# SAVE_DIR=results/models-v9enfr/aaf-v0010-af-checkRunAway/
 
 # for translation
 # prefix=iwslt15-enfr
@@ -56,11 +61,12 @@ event=IWSLT16
 testset=tst2014
 
 
+
 case $MODE in
 "train")
     echo MODE: train
-    # --dev_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.en \
-    # --dev_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.fr \
+      # --dev_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.en \
+      # --dev_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.fr \
     CUDA_LAUNCH_BLOCKING=1 $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/train.py \
       --train_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.en \
       --train_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.fr \
@@ -86,31 +92,23 @@ case $MODE in
       --eval_with_mask False \
       --scheduled_sampling False \
       --embedding_dropout 0.0 \
-      --learning_rate 0.002 \
+      --learning_rate ${LR} \
       --max_grad_norm 1.0 \
       --use_gpu True \
       --checkpoint_every 500 \
       --print_every 200 \
-      --num_epochs 30 \
+      --num_epochs 50 \
       --train_mode aaf_base \
       --teacher_forcing_ratio 1.0 \
-      --attention_forcing False \
-      --attention_loss_coeff 0.0 \
+      --attention_forcing True \
+      --attention_loss_coeff 10.0 \
       --save $SAVE_DIR \
+      --load $SAVE_DIR \
       --train_attscore_path af-models/tf/trainset/epoch_24/att_score.npy \
       2>&1 | tee ${EXP_DIR}/${SAVE_DIR}log.txt
       # --num_epochs 50 \
       # --train_attscore_path lib/attscores/iwslt.enfr.tfv0001.npy \
-
       # --load_tf af-models/tf/checkpoints_epoch/24 \
-
-      # bahdanau / hybrid
-      # --train_path_src lib/iwslt15-ytl/train.en \
-      # --train_path_tgt lib/iwslt15-ytl/train.vi \
-      # --path_vocab_src lib/iwslt15-ytl/vocab.en \
-      # --path_vocab_tgt lib/iwslt15-ytl/vocab.vi \
-      # --dev_path_src lib/iwslt15-ytl/tst2012.en \
-      # --dev_path_tgt lib/iwslt15-ytl/tst2012.vi \
     ;;
 "translate")
 trap "exit" INT
@@ -129,12 +127,13 @@ for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/*; do
         --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
         --test_path_out $test_path_out \
         --max_seq_len 200 \
-        --batch_size 64 \
+        --batch_size 50 \
         --use_gpu True \
         --beam_width 1
         # --use_teacher False \
         # --mode 2 \
         # --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy \
+    fi
 done
     ;;
 esac

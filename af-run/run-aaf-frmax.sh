@@ -7,9 +7,10 @@ export PATH=/home/mifs/ytl28/anaconda3/bin/:$PATH
 # /home/mifs/ytl28/bin:/home/mifs/ytl28/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:$PATH
 # export PATH=/home/mifs/ytl28/anaconda3/bin/:/home/mifs/ytl28/anaconda/bin:/home/mifs/ytl28/local/bin:/home/mifs/ytl28/anaconda3/condabin:/home/mifs/ytl28/bin:/home/mifs/ytl28/.local/bin:$PATH
 
-export MANU_CUDA_DEVICE=1 #note on nausicaa no.2 is no.0
+AIR_FORCE_GPU=0
+export MANU_CUDA_DEVICE=0 #note on nausicaa no.2 is no.0
 # select gpu when not on air
-if [[ "$HOSTNAME" != *"air"* ]]; then
+if [[ "$HOSTNAME" != *"air"* ]]  || [ $AIR_FORCE_GPU -eq 1 ]; then
   X_SGE_CUDA_DEVICE=$MANU_CUDA_DEVICE
 fi
 export CUDA_VISIBLE_DEVICES=$X_SGE_CUDA_DEVICE
@@ -36,14 +37,28 @@ export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
 MODE=train # train translate
-TRANSLATE_EPOCH=30
+# TRANSLATE_EPOCH=20
 
 # SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-aftf/
 # SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-log/
 
-FR_MAX=4.0
+# FR_MAX=4.0
+# FR_MAX=3.75
+# FR_MAX=3.25
+FR_MAX=3.15
+# FR_MAX=3.1
+# FR_MAX=2.0
+# FR_MAX=1.5
+# FR_MAX=0.0
 SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-fr${FR_MAX}/
 
+prefix=iwslt15-enfr
+event=IWSLT15
+testset=tst2013
+
+# prefix=en-fr-2015
+# event=IWSLT16
+# testset=tst2014
 
 case $MODE in
 "train")
@@ -88,7 +103,7 @@ case $MODE in
       --save $SAVE_DIR \
       --train_attscore_path af-models/tf/trainset/epoch_24/att_score.npy \
       --fr_loss_max_rate ${FR_MAX} \
-      --ep_aaf_start 1 \
+      --ep_aaf_start 5 \
       2>&1 | tee ${EXP_DIR}/${SAVE_DIR}log.txt
       # --load_tf af-models/tf/checkpoints_epoch/24 \
       # --num_epochs 50 \
@@ -103,21 +118,30 @@ case $MODE in
       # --dev_path_tgt lib/iwslt15-ytl/tst2012.vi \
     ;;
 "translate")
-    echo MODE: translate with ckpt of epoch ${TRANSLATE_EPOCH}
+trap "exit" INT
+for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/*; do
+    TRANSLATE_EPOCH=$(basename $f)
+    test_path_src=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.en
+    test_path_tgt=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
+    test_path_out=${SAVE_DIR}${testset}/epoch_${TRANSLATE_EPOCH}/
+    if [ ! -f "${test_path_out}translate.txt" ]; then
+    echo MODE: translate, save to $test_path_out
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
-        --test_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2013.en-fr.en \
-        --test_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2013.en-fr.fr \
+        --test_path_src $test_path_src \
+        --test_path_tgt $test_path_tgt \
         --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
         --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
         --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
-        --test_path_out ${SAVE_DIR}tst2013/epoch_${TRANSLATE_EPOCH}/ \
+        --test_path_out $test_path_out \
         --max_seq_len 200 \
         --batch_size 50 \
         --use_gpu True \
         --beam_width 1 \
         --use_teacher False \
         --mode 2 \
-        --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy \
+        --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy
+    fi
+done
     ;;
 esac
 

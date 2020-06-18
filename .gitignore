@@ -1,0 +1,8 @@
+*/.ipynb_checkpoints
+
+af-lib/mosesdecoder/
+
+af-models/
+af-run/asup/
+res/
+results/

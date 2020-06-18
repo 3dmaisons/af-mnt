@@ -7,9 +7,10 @@ export PATH=/home/mifs/ytl28/anaconda3/bin/:$PATH
 # /home/mifs/ytl28/bin:/home/mifs/ytl28/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:$PATH
 # export PATH=/home/mifs/ytl28/anaconda3/bin/:/home/mifs/ytl28/anaconda/bin:/home/mifs/ytl28/local/bin:/home/mifs/ytl28/anaconda3/condabin:/home/mifs/ytl28/bin:/home/mifs/ytl28/.local/bin:$PATH
 
-export MANU_CUDA_DEVICE=0 #note on nausicaa no.2 is no.0
+AIR_FORCE_GPU=0
+export MANU_CUDA_DEVICE=3 #note on nausicaa no.2 is no.0
 # select gpu when not on air
-if [[ "$HOSTNAME" != *"air"* ]]; then
+if [[ "$HOSTNAME" != *"air"* ]]  || [ $AIR_FORCE_GPU -eq 1 ]; then
   X_SGE_CUDA_DEVICE=$MANU_CUDA_DEVICE
 fi
 export CUDA_VISIBLE_DEVICES=$X_SGE_CUDA_DEVICE
@@ -35,15 +36,18 @@ cd $EXP_DIR
 export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
-MODE=train # train translate
-TRANSLATE_EPOCH=20
+MODE=translate # train translate
+# TRANSLATE_EPOCH=20
 # SAVE_DIR=results/models-v9enfr/aaf-v0012-af-masksrc/
 # SAVE_DIR=results/models-v9enfr/aaf-v0013-af-fixkl/
 # SAVE_DIR=results/models-v9enfr/aaf-v0013-af-debug/
 # SAVE_DIR=results/models-v9enfr/aaf-v0013-af/
-# SAVE_DIR=results/models-v9enfr/aaf-v0013-aftf/
-SAVE_DIR=results/models-v9enfr/aaf-v0013-aftf-checkRunAway/
-LR=0.008
+SAVE_DIR=results/models-v9enfr/aaf-v0013-aftf-bs128/
+LR=0.002
+echo batch_size is 128, not 50, for comparison with TF!!!
+
+# SAVE_DIR=results/models-v9enfr/aaf-v0013-aftf-checkRunAway/
+# LR=0.008
 
 # SAVE_DIR=results/models-v9enfr/aaf-v0010-af-checkRunAway/
 
@@ -52,11 +56,11 @@ LR=0.008
 case $MODE in
 "train")
     echo MODE: train
+      # --dev_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.en \
+      # --dev_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.fr \
     CUDA_LAUNCH_BLOCKING=1 $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/train.py \
       --train_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.en \
       --train_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.fr \
-      --dev_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.en \
-      --dev_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.fr \
       --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
       --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
       --random_seed 16 \
@@ -74,7 +78,7 @@ case $MODE in
       --hidden_size_shared 200 \
       --dropout 0.2 \
       --max_seq_len 64 \
-      --batch_size 50 \
+      --batch_size 128 \
       --batch_first True \
       --eval_with_mask False \
       --scheduled_sampling False \
@@ -97,6 +101,9 @@ case $MODE in
       # --load_tf af-models/tf/checkpoints_epoch/24 \
     ;;
 "translate")
+trap "exit" INT
+for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/*; do
+    TRANSLATE_EPOCH=$(basename $f)
     echo MODE: translate with ckpt of epoch ${TRANSLATE_EPOCH}
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
         --test_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2013.en-fr.en \
@@ -108,10 +115,11 @@ case $MODE in
         --max_seq_len 200 \
         --batch_size 50 \
         --use_gpu True \
-        --beam_width 1 \
+        --beam_width 1
         # --use_teacher False \
         # --mode 2 \
         # --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy \
+done
     ;;
 esac
 

@@ -1,0 +1,114 @@
+IWSLT 2015 evaluation campaign: test sets for MT track
+
+# Copyright: TED Conference LLC
+# License: Creative Commons Attribution-NonCommercial-NoDerivs 3.0
+
+This directory includes the evaluation sets for one of the language
+pairs of the MT track; the pair consists of English on one side and on
+the other side a language from this list:
+
+- French, German, Chinese, Czech, Thai, Vietnamese
+
+With some exceptions specified below, for each pair x-y of languages,
+the xml files
+
+IWSLT14.TED.tst2014.x-y.x.xml
+IWSLT14.TED.tst2014.x-y.y.xml
+IWSLT14.TED.tst2015.x-y.x.xml
+IWSLT14.TED.tst2015.x-y.y.xml
+
+are provided. tst2015 files are the official test set of this edition
+of the evaluation campaign, while tst2014 are the progressive test
+sets. The exceptions regard the following pairs:
+
+en<->{cs,th,vi}: no progressive test set is released
+de ->en: TEDX test sets are released instead of TED-based sets
+de<->en: no reference file is available 
+
+The TEDX-based test sets are the same as proposed for the ASR/SLT
+tracks.
+
+Each TED-based tst2015 evaluation set includes as many as possible TED
+talks from a common set of the 12 talks listed at the end of this
+file.
+
+Each talk defines a single document, for which metadata are provided
+in the following tags:
+
+<url>: the url of the page with the text
+<description>: a brief description of the talk
+<keywords>: keywords of the talk
+<talkid>: a numeric identifier of the talk
+<title>: the title of the talk
+
+Text is segmented in sentences. Segments can include more than one
+sentence.
+
+UTF8 encoding is used.  The simplified set of characters is employed
+for Chinese text, and no segmentation/preprocessing has been applied.
+
+Notes:
+
+- Thai texts are segmented according to the guideline available here:
+    http://hltshare.fbk.eu/IWSLT2015/InterBEST2009Guidelines-2.pdf
+  and defined at InterBEST 2009:
+    http://thailang.nectec.or.th/interbest/
+
+- The German TEDX talks are transcribed as they are spoken. Therefore,
+  in some cases the ending 'e' of German words is not written
+  (e.g. glaub' instead of glaube). The same happens for the beginning
+  of the German indefinite article. If you do not address this in your
+  translation system, you can use the following simple replacement:
+
+  sed -e "s/' /e /g" -e "s/'n /ein /g" -e "s/'ne /eine /g" -e "s/'nem /einem /g" -e "s/'nen /einen /g" -e "s/'ner /einer /g"
+
+-------------------------------------------------------------------
+List of the English TED talks defining the tst2015 evaluation sets:
+
+<url>http://www.ted.com/talks/alex_wissner_gross_a_new_equation_for_intelligence</url>
+<speaker>Alex Wissner-Gross</speaker>
+<talkid>1922</talkid>
+
+<url>http://www.ted.com/talks/ash_beckham_we_re_all_hiding_something_let_s_find_the_courage_to_open_up</url>
+<speaker>Ash Beckham</speaker>
+<talkid>1932</talkid>
+
+<url>http://www.ted.com/talks/mary_lou_jepsen_could_future_devices_read_images_from_our_brains</url>     
+<speaker>Mary Lou Jepsen</speaker>     
+<talkid>1939</talkid>
+
+<url>http://www.ted.com/talks/ziauddin_yousafzai_my_daughter_malala</url>
+<speaker>Ziauddin Yousafzai</speaker>
+<talkid>1954</talkid>
+
+<url>http://www.ted.com/talks/geena_rocero_why_i_must_come_out</url>
+<speaker>Geena Rocero</speaker>
+<talkid>1961</talkid>
+
+<url>http://www.ted.com/talks/kevin_briggs_the_bridge_between_suicide_and_life</url>
+<speaker>Kevin Briggs</speaker>
+<talkid>1997</talkid>
+
+<url>http://www.ted.com/talks/chris_kluwe_how_augmented_reality_will_change_sports_and_build_empathy</url>
+<speaker>Chris Kluwe</speaker>
+<talkid>2007</talkid>
+
+<url>http://www.ted.com/talks/stella_young_i_m_not_your_inspiration_thank_you_very_much</url>
+<speaker>Stella Young</speaker>
+<talkid>2017</talkid>
+
+<url>http://www.ted.com/talks/zak_ebrahim_i_am_the_son_of_a_terrorist_here_s_how_i_chose_peace</url>
+<speaker>Zak Ebrahim</speaker>
+<talkid>2024</talkid>
+
+<url>http://www.ted.com/talks/david_chalmers_how_do_you_explain_consciousness</url>
+<speaker>David Chalmers</speaker>
+<talkid>2045</talkid>
+
+<url>http://www.ted.com/talks/meaghan_ramsey_why_thinking_you_re_ugly_is_bad_for_you</url>
+<speaker>Meaghan Ramsey</speaker>
+<talkid>2102</talkid>
+
+<url>http://www.ted.com/talks/marc_kushner_why_the_buildings_of_the_future_will_be_shaped_by_you</url>
+<speaker>Marc Kushner</speaker>
+<talkid>2183</talkid>

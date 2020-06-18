@@ -37,12 +37,12 @@ export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 MODE=translate # train translate
 FR_MAX=0.0
-TRANSLATE_EPOCH=19
+# TRANSLATE_EPOCH=30 # obsolete
 
 # SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-aftf/
 # SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-log/
 SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-fr${FR_MAX}/
-
+# SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-fr${FR_MAX}-log/
 
 case $MODE in
 "train")
@@ -102,6 +102,8 @@ case $MODE in
       # --dev_path_tgt lib/iwslt15-ytl/tst2012.vi \
     ;;
 "translate")
+for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/*; do
+	TRANSLATE_EPOCH=$(basename $f)
     echo MODE: translate with ckpt of epoch ${TRANSLATE_EPOCH}
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
         --test_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2013.en-fr.en \
@@ -116,7 +118,8 @@ case $MODE in
         --beam_width 1 \
         --use_teacher False \
         --mode 2 \
-        --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy \
+        --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy
+done
     ;;
 esac
 

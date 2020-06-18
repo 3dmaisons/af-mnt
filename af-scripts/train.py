@@ -629,18 +629,20 @@ class Trainer(object):
 		return model
 
 
+
 class Trainer_aaf_base(Trainer):
-	"""docstring for Trainer_aaf"""
+	"""same as Trainer, except for rmoving 'for loop' used to compute loss"""
 	def __init__(self, load_tf_dir=None, fr_loss_max_rate=1.0, ep_aaf_start=10, **kwargs):
 		super(Trainer_aaf_base, self).__init__(**kwargs)
 		self.load_tf_dir = load_tf_dir
 
 		# for aaf
-		self.fr_loss_max_rate = fr_loss_max_rate
-		self.ep_aaf_start = ep_aaf_start
-		self.dct_fr_seqs = {}
-
-	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None, epoch=None):
+		# self.fr_loss_max_rate = fr_loss_max_rate
+		# self.ep_aaf_start = ep_aaf_start
+		# self.dct_fr_seqs = {}
+		self.dct_info = {'nll':[], 'kl':[], 'fr_percent':[]}
+		
+	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None):
 		
 		"""
 			Args:
@@ -772,221 +774,36 @@ class Trainer_aaf_base(Trainer):
 		# print(resloss, resklloss, klloss.get_fr_percent())
 		# import pdb; pdb.set_trace()
 		# input('...')
-		return resloss, resklloss, klloss.get_fr_percent()
+		self._update_dct_info(step, resloss, resklloss)
 
-	def _train_epoches(self, train_set, model, n_epochs, start_epoch, start_step, dev_set=None):
+		return resloss, resklloss
 
-		log = self.logger
+	def _update_dct_info(self, step, resloss, resklloss, fr_percent=-1.0):
+		self.dct_info['nll'].append(resloss)
+		self.dct_info['kl'].append(resklloss)
+		self.dct_info['fr_percent'].append(fr_percent)
+		flag_print_inter = True
+		if step % self.checkpoint_every == 0 and flag_print_inter:
+			dirFile = os.path.join(self.expt_dir,'dct_info.pkl')
+			with open(dirFile,'wb') as f:
+				pickle.dump(self.dct_info, f, protocol=2)
 
-		print_loss_total = 0  # Reset every print_every
-		epoch_loss_total = 0  # Reset every epoch
-		print_klloss_total = 0  # Reset every print_every
-		epoch_klloss_total = 0  # Reset every epoch
-		print_fr_percent_total = 0  # Reset every print_every
-		epoch_fr_percent_total = 0  # Reset every epoch
-
-		step = start_step
-		step_elapsed = 0
-		ckpt = None
-		prev_acc = 0.0
-		prev_epoch_acc = 0.0
-
-		# ******************** [loop over epochs] ********************
-		for epoch in range(start_epoch, n_epochs + 1):
-
-			# ----------construct batches-----------
-			# allow re-shuffling of data
-			if type(train_set.attscore_path) != type(None):
-				print('--- construct train set (with attscore) ---')
-				train_batches, vocab_size = train_set.construct_batches_with_attscore(is_train=True)
-			else:
-				print('--- construct train set ---')
-				train_batches, vocab_size = train_set.construct_batches(is_train=True)
-
-			if dev_set is not None:
-				if type(dev_set.attscore_path) != type(None):
-					print('--- construct dev set (with attscore) ---')
-					dev_batches, vocab_size = dev_set.construct_batches_with_attscore(is_train=False)
-				else:
-					print('--- construct dev set ---')
-					dev_batches, vocab_size = dev_set.construct_batches(is_train=False)
-
-
-			# --------print info for each epoch----------
-			steps_per_epoch = len(train_batches)
-			total_steps = steps_per_epoch * n_epochs
-			log.info("steps_per_epoch {}".format(steps_per_epoch))
-			log.info("total_steps {}".format(total_steps))
-
-
-			log.debug(" ----------------- Epoch: %d, Step: %d -----------------" % (epoch, step))
-			mem_kb, mem_mb, mem_gb = get_memory_alloc()
-			mem_mb = round(mem_mb, 2)
-			print('Memory used: {0:.2f} MB'.format(mem_mb))
-			# self.writer.add_scalar('Memory_MB', mem_mb, global_step=step)
-			sys.stdout.flush()
-
-			# ******************** [loop over batches] ********************
-			model.train(True)
-
-			for batch in train_batches:
-
-				# update macro count
-				step += 1
-				step_elapsed += 1
-
-				# load data
-				src_ids = batch['src_word_ids']
-				src_lengths = batch['src_sentence_lengths']
-				tgt_ids = batch['tgt_word_ids']
-				tgt_lengths = batch['tgt_sentence_lengths']
-				src_probs = None
-				attscores = None
-				if 'src_ddfd_probs' in batch:
-					src_probs =  batch['src_ddfd_probs']
-					src_probs = _convert_to_tensor(src_probs, self.use_gpu).unsqueeze(2)
-				if 'attscores' in batch:
-					attscores = batch['attscores'] #list of numpy arrays
-					attscores = _convert_to_tensor(attscores, self.use_gpu) #n*31*32
-
-				# sanity check src-tgt pair
-				if step == 1:
-					print('--- Check src tgt pair ---')
-					log_msgs = check_srctgt(src_ids, tgt_ids, train_set.src_id2word, train_set.tgt_id2word)
-					for log_msg in log_msgs:
-						sys.stdout.buffer.write(log_msg)
-						# print(log_msg)
-
-				# convert variable to tensor
-				src_ids = _convert_to_tensor(src_ids, self.use_gpu)
-				tgt_ids = _convert_to_tensor(tgt_ids, self.use_gpu)
-				# print(s rc_probs.size())
-
-				# Get loss
-				# import pdb; pdb.set_trace()
-				loss, klloss, fr_percent = self._train_batch(src_ids, tgt_ids, model, step, total_steps, 
-												src_probs=src_probs, attscores=attscores, epoch=epoch)
-
-				print_loss_total += loss
-				epoch_loss_total += loss
-				print_klloss_total += klloss
-				epoch_klloss_total += klloss
-				print_fr_percent_total += fr_percent
-				epoch_fr_percent_total += fr_percent
-
-				if step % self.print_every == 0 and step_elapsed > self.print_every:
-					print_loss_avg = print_loss_total / self.print_every
-					print_loss_total = 0
-					print_klloss_avg = print_klloss_total / self.print_every
-					print_klloss_total = 0
-					print_fr_percent_avg = print_fr_percent_total / self.print_every
-					print_fr_percent_total = 0
-					log_msg = 'Progress: %d%%, Train %s: %.4f, att klloss: %.4f,' % (
-								step / total_steps * 100,
-								self.loss.name,
-								print_loss_avg,
-								print_klloss_avg)
-					# print(log_msg)
-					log.info(log_msg)
-					log.info('TMP fr_percent: {}'.format(print_fr_percent_avg))
-					
-					# self.writer.add_scalar('train_loss', print_loss_avg, global_step=step)
-					# self.writer.add_scalar('train_klloss', print_klloss_avg, global_step=step)
-
-				# Checkpoint
-				if step % self.checkpoint_every == 0 or step == total_steps or step == 1:
-				# if step == 1:	
-					ckpt = Checkpoint(model=model,
-							   optimizer=self.optimizer,
-							   epoch=epoch, step=step,
-							   input_vocab=train_set.vocab_src,
-							   output_vocab=train_set.vocab_tgt)
-					# save criteria
-					if dev_set is not None:
-						dev_loss, accuracy = self._evaluate_batches(model, dev_batches, dev_set)
-						print('dev loss: {}, accuracy: {}'.format(dev_loss, accuracy))
-						model.train(mode=True)
-
-						if prev_acc < accuracy:
-						# if True:	
-							# save the best model
-							saved_path = ckpt.save(self.expt_dir)
-							print('saving at {} ... '.format(saved_path))
-							prev_acc = accuracy
-							# keep best 5 models
-							ckpt.rm_old(self.expt_dir, keep_num=5)
-
-						# else:
-						# 	# load last best model - disable [this froze the training..]
-						# 	latest_checkpoint_path = Checkpoint.get_latest_checkpoint(self.expt_dir)
-						# 	resume_checkpoint = Checkpoint.load(latest_checkpoint_path)
-						# 	model = resume_checkpoint.model
-
-					else:
-						saved_path = ckpt.save(self.expt_dir)
-						print('saving at {} ... '.format(saved_path))
-						# keep last 2 models
-						ckpt.rm_old(self.expt_dir, keep_num=2)
-
-					# save the last ckpt
-					# if step == total_steps:
-					# 	saved_path = ckpt.save(self.expt_dir)
-					# 	print('saving at {} ... '.format(saved_path))
-				
-				sys.stdout.flush()
-
-
-			if step_elapsed == 0: continue
-			epoch_loss_avg = epoch_loss_total / min(steps_per_epoch, step - start_step)
-			epoch_loss_total = 0
-			epoch_klloss_avg = epoch_klloss_total / min(steps_per_epoch, step - start_step)
-			epoch_klloss_total = 0
-			epoch_fr_percent_avg = epoch_fr_percent_total / min(steps_per_epoch, step - start_step)
-			epoch_fr_percent_total = 0
-			log_msg = "Finished epoch %d: Train %s: %.4f att klloss: %.4f; free run percent %.4f" % (epoch, self.loss.name, epoch_loss_avg, epoch_klloss_avg, epoch_fr_percent_avg)
-
-			# ********************** [finish 1 epoch: eval on dev] ***********************	
-			if dev_set is not None:
-				# stricter criteria to save if dev set is available - only save when performance improves on dev set
-				dev_loss, epoch_accuracy = self._evaluate_batches(model, dev_batches, dev_set)
-				self.optimizer.update(dev_loss, epoch)
-				# self.writer.add_scalar('dev_loss', dev_loss, global_step=step)
-				# self.writer.add_scalar('dev_acc', accuracy, global_step=step)
-				log_msg += ", Dev %s: %.4f, Accuracy: %.4f" % (self.loss.name, dev_loss, epoch_accuracy)
-				model.train(mode=True)
-				if prev_epoch_acc < epoch_accuracy:
-					# save after finishing one epoch
-					if ckpt is None:
-						ckpt = Checkpoint(model=model,
-								   optimizer=self.optimizer,
-								   epoch=epoch, step=step,
-								   input_vocab=train_set.vocab_src,
-								   output_vocab=train_set.vocab_tgt)
-
-					saved_path = ckpt.save_epoch(self.expt_dir, epoch)
-					print('saving at {} ... '.format(saved_path))
-					prev_epoch_acc = epoch_accuracy			
-			else:
-				self.optimizer.update(epoch_loss_avg, epoch)
-				# save after finishing one epoch
-				if ckpt is None:
-					ckpt = Checkpoint(model=model,
-							   optimizer=self.optimizer,
-							   epoch=epoch, step=step,
-							   input_vocab=train_set.vocab_src,
-							   output_vocab=train_set.vocab_tgt)
-
-				saved_path = ckpt.save_epoch(self.expt_dir, epoch)
-				print('saving at {} ... '.format(saved_path))			
-
-			log.info('\n')
-			log.info(log_msg)
 		
 
 class Trainer_aaf(Trainer_aaf_base):
+	def __init__(self, load_tf_dir=None, fr_loss_max_rate=1.0, ep_aaf_start=10, **kwargs):
+		super(Trainer_aaf_base, self).__init__(**kwargs)
+		self.load_tf_dir = load_tf_dir
+
+		# for aaf
+		self.fr_loss_max_rate = fr_loss_max_rate
+		self.ep_aaf_start = ep_aaf_start
+		self.dct_fr_seqs = {}
+		self.dct_info = {'nll':[], 'kl':[], 'fr_percent':[]}
+
 	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None, epoch=None):
 		if epoch < self.ep_aaf_start:
-			return super(Trainer_aaf, self)._train_batch(src_ids, tgt_ids, model, step, total_steps, src_probs=src_probs, attscores=attscores, epoch=epoch)
+			return super(Trainer_aaf, self)._train_batch(src_ids, tgt_ids, model, step, total_steps, src_probs=src_probs, attscores=attscores)
 		else:
 			return self._train_batch_aaf(src_ids, tgt_ids, model, step, total_steps, src_probs=src_probs, attscores=attscores, epoch=epoch)
 
@@ -1115,11 +932,16 @@ class Trainer_aaf(Trainer_aaf_base):
 		self.optimizer.step()
 
 		resloss = loss.get_loss()
-		# print(resloss, resklloss, klloss.get_fr_percent())
-		self._update_dct_fr_seqs(model, step, src_ids, tgt_ids, ret_dict, klloss.mask_utt_fr, ret_dict_fr=ret_dict_fr)
-		# import pdb; pdb.set_trace()
+		fr_percent = klloss.get_fr_percent()
+		# print(resloss, resklloss, fr_percent)
 
-		return resloss, resklloss, klloss.get_fr_percent()
+		self._update_dct_info(step, resloss, resklloss, fr_percent)
+		self._update_dct_fr_seqs(model, step, src_ids, tgt_ids, ret_dict, klloss.mask_utt_fr, ret_dict_fr=ret_dict_fr)
+
+		return resloss, resklloss, fr_percent
+
+	
+
 
 	def _update_dct_fr_seqs(self, model, step, src_ids, tgt_ids, ret_dict, switch_utt_fr, ret_dict_fr=None):
 		# import pdb; pdb.set_trace()
@@ -1164,293 +986,6 @@ class Trainer_aaf(Trainer_aaf_base):
 			with open(dirFile,'wb') as f:
 				pickle.dump(self.dct_fr_seqs, f, protocol=2)
 
-
-
-class Trainer_sched(object):
-
-	def __init__(self, expt_dir='experiment', 
-		load_dir=None,
-		load_tf_dir=None,
-		loss=NLLLoss_sched(), 
-		batch_size=64, 
-		random_seed=None,
-		checkpoint_every=100, 
-		print_every=100, 
-		use_gpu=False,
-		learning_rate=0.001, 
-		max_grad_norm=1.0,
-		eval_with_mask=True,
-		scheduled_sampling=False,
-		teacher_forcing_ratio=0.0,
-		attention_loss_coeff=1.0,
-		attention_forcing=False):
-
-		self.random_seed = random_seed
-		if random_seed is not None:
-			set_global_seeds(random_seed)
-
-		self.loss = loss
-		self.optimizer = None
-		self.checkpoint_every = checkpoint_every
-		self.print_every = print_every
-		self.use_gpu = use_gpu
-		self.learning_rate = learning_rate
-		self.max_grad_norm = max_grad_norm
-		self.eval_with_mask = eval_with_mask
-		self.scheduled_sampling = scheduled_sampling
-		self.teacher_forcing_ratio = teacher_forcing_ratio
-		self.attention_loss_coeff = attention_loss_coeff
-		self.attention_forcing = attention_forcing
-
-		if not os.path.isabs(expt_dir):
-			expt_dir = os.path.join(os.getcwd(), expt_dir)
-		self.expt_dir = expt_dir
-		if not os.path.exists(self.expt_dir):
-			os.makedirs(self.expt_dir)
-		self.load_dir = load_dir
-		self.load_tf_dir = load_tf_dir
-
-		self.batch_size = batch_size
-		self.logger = logging.getLogger(__name__)
-		# self.writer = torch.utils.tensorboard.writer.SummaryWriter(log_dir=self.expt_dir)
-
-
-	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None, epoch=None):
-		
-		"""
-			Args:
-				src_ids 		=     w1 w2 w3 </s> <pad> <pad> <pad>
-				tgt_ids 		= <s> w1 w2 w3 </s> <pad> <pad> <pad>
-			(optional)
-				src_probs 		=     p1 p2 p3 0    0     ...
-				attscores 		n * [31*32] numpy array 
-			Others:
-				internal input 	= <s> w1 w2 w3 </s> <pad> <pad>
-				decoder_outputs	= 	  w1 w2 w3 </s> <pad> <pad> <pad>
-		"""
-
-		# define loss
-		loss = self.loss
-		klloss = KLDivLoss_sched()
-
-		# scheduled sampling
-		if not self.scheduled_sampling:
-			teacher_forcing_ratio = self.teacher_forcing_ratio
-		else:
-			progress = 1.0 * step / total_steps
-			# linear schedule
-			teacher_forcing_ratio = 1.0 - progress 
-
-		# get padding mask
-		non_padding_mask_src = src_ids.data.ne(PAD)
-		non_padding_mask_tgt = tgt_ids.data.ne(PAD)
-
-		# Forward propagation
-		# print(teacher_forcing_ratio)
-		# get 2 versions: tf model always uses ref history, af model uses ref / gen history
-		decoder_outputs, decoder_hidden, ret_dict = model(src_ids, tgt_ids, 
-												is_training=True, 
-												teacher_forcing_ratio=1.0,
-												att_key_feats=src_probs, att_scores=attscores)
-
-		decoder_outputs_fr, decoder_hidden_fr, ret_dict_fr = model(src_ids, tgt_ids, 
-												is_training=True, 
-												teacher_forcing_ratio=0.0,
-												att_key_feats=src_probs, att_scores=attscores)
-		# print(len(decoder_outputs))	# max_seq_len - 1
-
-		# Print out intermediate results
-		if step % self.checkpoint_every == 0:
-			seqlist = ret_dict['sequence']
-			# convert to words
-			srcwords = _convert_to_words_batchfirst(src_ids, model.id2word_enc)
-			refwords = _convert_to_words_batchfirst(tgt_ids[:,1:], model.id2word_dec)			
-			seqwords = _convert_to_words(seqlist, model.id2word_dec)
-
-			print('---step_res---')
-			for i in range(3):
-				print('---{}---'.format(i))
-				outsrc = 'SRC: {}\n'.format(' '.join(srcwords[i])).encode('utf-8')
-				outref = 'REF: {}\n'.format(' '.join(refwords[i])).encode('utf-8')
-				outline = 'OUT: {}\n'.format(' '.join(seqwords[i])).encode('utf-8')
-				sys.stdout.buffer.write(outsrc)
-				sys.stdout.buffer.write(outref)
-				sys.stdout.buffer.write(outline)
-			print('----------------')
-			# input('...')
-			sys.stdout.flush()
-
-		# Get loss 
-		# again, 2 versions; att loss first, then output and total
-		
-
-		# compare KL, choose which loss to use using masks
-		assert self.attention_loss_coeff > 0, 'self.attention_loss_coeff > 0 required, but got {}'.foramt(self.attention_loss_coeff)
-		# Get KL loss
-		attn_hyp = ret_dict['attention_score']
-		attn_ref = ret_dict['attention_ref']
-
-		attn_hyp_fr = ret_dict_fr['attention_score']
-		attn_ref_fr = ret_dict_fr['attention_ref']
-
-		# import pdb; pdb.set_trace()
-		# print(src_ids.size(), tgt_ids.size())
-		# print(len(attn_hyp))
-		
-		# print('sizes ... ')
-		# print(len(attn_hyp))
-		# print(non_padding_mask_tgt.size())
-		# print(attn_hyp[0].size()) # b * 1 * seq_len
-		# print(attn_ref[0].size())
-		# input('...')
-
-
-		klloss.eval_batch_with_mask_v3(torch.cat(attn_hyp,dim=1), 
-									torch.cat(attn_hyp_fr,dim=1),
-									torch.cat(attn_ref,dim=1), 
-									non_padding_mask_tgt[:, 1:],
-									epoch)
-
-		# for idx in range(len(attn_hyp)):
-		# 	# print('{} hyp vs ref ...'.format(idx))
-		# 	# print(attn_hyp[idx])
-		# 	# print(attn_ref[idx])
-		# 	# klloss.eval_batch(attn_hyp[idx].contiguous(), attn_ref[idx].contiguous())
-		# 	klloss.eval_batch_with_mask_v2_sched(attn_hyp[idx].contiguous(), attn_hyp_fr[idx].contiguous(), attn_ref[idx].contiguous(), non_padding_mask_tgt[:, idx+1])
-		# 	# print(klloss.acc_loss)
-		# 	# input('...')
-
-		# add coeff
-		klloss.mul(self.attention_loss_coeff)
-
-		# import pdb; pdb.set_trace()
-
-		loss.reset()
-		# .contiguous() is for safety / consistency
-		loss.eval_batch_with_mask_v3(torch.stack(decoder_outputs).permute(1,2,0).contiguous(), 
-									torch.stack(decoder_outputs_fr).permute(1,2,0).contiguous(), 
-									tgt_ids[:, 1:], 
-									non_padding_mask_tgt[:, 1:],
-									klloss.mask_utt_fr)
-
-		# for step, (step_output, step_output_fr) in enumerate(zip(decoder_outputs, decoder_outputs_fr)):
-		# 	# iterate over seq_len
-		# 	if not self.eval_with_mask:
-		# 		# print('Train with penalty on mask')
-		# 		loss.eval_batch(step_output.contiguous()\
-		# 			.view(self.batch_size, -1), tgt_ids[:, step+1])
-		# 		# print(step_output)
-		# 		# print(step_output.contiguous().view(self.batch_size, -1))
-		# 		# print(tgt_ids[:, step+1])
-		# 		# input('...')
-		# 	else:
-		# 		# print('Train without penalty on mask')
-		# 		loss.eval_batch_with_mask_sched(
-		# 			step_output.contiguous().view(self.batch_size, -1),\
-		# 			step_output_fr.contiguous().view(self.batch_size, -1),\
-		# 			tgt_ids[:, step+1], non_padding_mask_tgt[:, step+1],\
-		# 			klloss.mask_utt_fr)
-		# 		# print(step_output) 
-		# 		# print(step_output.contiguous().view(self.batch_size, -1).size()) # b * vocab_size
-		# 		# print(tgt_ids[:, step+1]) # b * 1
-		# 		# print('mask',non_padding_mask_tgt[:, step+1]) # b * 1
-		# 		# input('...')
-		# 	# print(loss.acc_loss)
-		# 	# input('...')
-
-
-		# addition
-		total_loss = loss.add(klloss)
-		# print(loss.acc_loss, klloss.acc_loss, total_loss)
-		# for name, param in model.named_parameters():
-		# 	print('grad {}:{}'.format(name, param.grad))
-		# 	print('val {}:{}'.format(name, param.data))
-
-		# Backward propagation
-		model.zero_grad()
-		total_loss.backward()
-		# loss.backward(retain_graph=True)
-		# klloss.backward()
-		resklloss = klloss.get_loss()
-
-
-		self.optimizer.step()
-		# input('.........')
-		# for name, param in model.named_parameters():
-		# 	print('grad {}:{}'.format(name, param.grad))
-		# 	print('val {}:{}'.format(name, param.data))
-
-		resloss = loss.get_loss()
-		# print(resloss, resklloss)
-		# input('...')
-
-		return resloss, resklloss
-
-
-	def _evaluate_batches(self, model, batches, dataset):
-
-		model.eval()
-
-		loss = self.loss
-		loss.reset()
-		match = 0
-		total = 0
-
-		out_count = 0
-		with torch.no_grad():
-			for batch in batches:
-
-				src_ids = batch['src_word_ids']
-				src_lengths = batch['src_sentence_lengths']
-				tgt_ids = batch['tgt_word_ids']
-				tgt_lengths = batch['tgt_sentence_lengths']
-				src_probs = None
-				if 'src_ddfd_probs' in batch:
-					src_probs =  batch['src_ddfd_probs']
-					src_probs = _convert_to_tensor(src_probs, self.use_gpu).unsqueeze(2)
-
-				src_ids = _convert_to_tensor(src_ids, self.use_gpu)
-				tgt_ids = _convert_to_tensor(tgt_ids, self.use_gpu)
-
-				decoder_outputs, decoder_hidden, other = model(src_ids, tgt_ids,
-														is_training=False,
-														att_key_feats=src_probs)
-
-				# Evaluation
-				seqlist = other['sequence']
-				for step, step_output in enumerate(decoder_outputs):
-					target = tgt_ids[:, step+1]
-					non_padding = target.ne(PAD)
-
-					if not self.eval_with_mask:
-						loss.eval_batch(step_output.view(tgt_ids.size(0), -1), target)
-					else:
-						loss.eval_batch_with_mask(step_output.view(tgt_ids.size(0), -1), target, non_padding)
-
-					correct = seqlist[step].view(-1).eq(target).masked_select(non_padding).sum().item()
-					match += correct
-					total += non_padding.sum().item()
-				
-				if out_count < 3:
-					refwords = _convert_to_words_batchfirst(tgt_ids[:,1:], dataset.tgt_id2word)
-					seqwords = _convert_to_words(seqlist, dataset.tgt_id2word)
-					outref = 'REF: {}\n'.format(' '.join(refwords[0])).encode('utf-8')
-					outline = 'GEN: {}\n'.format(' '.join(seqwords[0])).encode('utf-8')
-					sys.stdout.buffer.write(outref)
-					sys.stdout.buffer.write(outline)
-					out_count += 1
-
-
-		if total == 0:
-			accuracy = float('nan')
-		else:
-			accuracy = match / total
-		resloss = loss.get_loss()
-		torch.cuda.empty_cache()
-
-		return resloss, accuracy
-		
-
 	def _train_epoches(self, train_set, model, n_epochs, start_epoch, start_step, dev_set=None):
 
 		log = self.logger
@@ -1459,6 +994,8 @@ class Trainer_sched(object):
 		epoch_loss_total = 0  # Reset every epoch
 		print_klloss_total = 0  # Reset every print_every
 		epoch_klloss_total = 0  # Reset every epoch
+		print_fr_percent_total = 0  # Reset every print_every
+		epoch_fr_percent_total = 0  # Reset every epoch
 
 		step = start_step
 		step_elapsed = 0
@@ -1503,6 +1040,7 @@ class Trainer_sched(object):
 
 			# ******************** [loop over batches] ********************
 			model.train(True)
+
 			for batch in train_batches:
 
 				# update macro count
@@ -1534,23 +1072,32 @@ class Trainer_sched(object):
 				# convert variable to tensor
 				src_ids = _convert_to_tensor(src_ids, self.use_gpu)
 				tgt_ids = _convert_to_tensor(tgt_ids, self.use_gpu)
-				# print(s rc_probs.size())
+				# print(src_probs.size())
 
 				# Get loss
 				# import pdb; pdb.set_trace()
-				loss, klloss = self._train_batch(src_ids, tgt_ids, model, step, total_steps, 
+				tmp = self._train_batch(src_ids, tgt_ids, model, step, total_steps, 
 												src_probs=src_probs, attscores=attscores, epoch=epoch)
+				if len(tmp)==2:
+					loss, klloss = tmp
+					fr_percent = -1.0
+				else:
+					loss, klloss, fr_percent = tmp
 
 				print_loss_total += loss
 				epoch_loss_total += loss
 				print_klloss_total += klloss
 				epoch_klloss_total += klloss
+				print_fr_percent_total += fr_percent
+				epoch_fr_percent_total += fr_percent
 
-				if step % self.print_every == 0 and step_elapsed > self.print_every:
+				if step % self.print_every == 0 and step_elapsed >= self.print_every:
 					print_loss_avg = print_loss_total / self.print_every
 					print_loss_total = 0
 					print_klloss_avg = print_klloss_total / self.print_every
 					print_klloss_total = 0
+					print_fr_percent_avg = print_fr_percent_total / self.print_every
+					print_fr_percent_total = 0
 					log_msg = 'Progress: %d%%, Train %s: %.4f, att klloss: %.4f,' % (
 								step / total_steps * 100,
 								self.loss.name,
@@ -1558,6 +1105,8 @@ class Trainer_sched(object):
 								print_klloss_avg)
 					# print(log_msg)
 					log.info(log_msg)
+					log.info('TMP fr_percent: {}'.format(print_fr_percent_avg))
+					
 					# self.writer.add_scalar('train_loss', print_loss_avg, global_step=step)
 					# self.writer.add_scalar('train_klloss', print_klloss_avg, global_step=step)
 
@@ -1603,12 +1152,15 @@ class Trainer_sched(object):
 				
 				sys.stdout.flush()
 
+
 			if step_elapsed == 0: continue
 			epoch_loss_avg = epoch_loss_total / min(steps_per_epoch, step - start_step)
 			epoch_loss_total = 0
 			epoch_klloss_avg = epoch_klloss_total / min(steps_per_epoch, step - start_step)
 			epoch_klloss_total = 0
-			log_msg = "Finished epoch %d: Train %s: %.4f att klloss: %.4f" % (epoch, self.loss.name, epoch_loss_avg, epoch_klloss_avg)
+			epoch_fr_percent_avg = epoch_fr_percent_total / min(steps_per_epoch, step - start_step)
+			epoch_fr_percent_total = 0
+			log_msg = "Finished epoch %d: Train %s: %.4f att klloss: %.4f; free run percent %.4f" % (epoch, self.loss.name, epoch_loss_avg, epoch_klloss_avg, epoch_fr_percent_avg)
 
 			# ********************** [finish 1 epoch: eval on dev] ***********************	
 			if dev_set is not None:
@@ -1648,95 +1200,6 @@ class Trainer_sched(object):
 			log.info(log_msg)
 
 
-	def train(self, train_set, model, num_epochs=5, resume=False, optimizer=None, dev_set=None):
-
-		""" 
-			Run training for a given model.
-			Args:
-				train_set: Dataset
-				dev_set: Dataset, optional
-				model: model to run training on, if `resume=True`, it would be
-				   overwritten by the model loaded from the latest checkpoint.
-				num_epochs (int, optional): number of epochs to run (default 5)
-				resume(bool, optional): resume training with the latest checkpoint, (default False)
-				optimizer (seq2seq.optim.Optimizer, optional): optimizer for training
-				   (default: Optimizer(pytorch.optim.Adam, max_grad_norm=5))
-				
-			Returns:
-				model (seq2seq.models): trained model.
-		"""
-
-		torch.cuda.empty_cache()
-
-		# dropout_rate = model.dropout_rate
-		# print('dropout {}'.format(dropout_rate))
-
-		# # load tf model as pretrain
-		# if self.load_tf_dir:
-		# 	latest_checkpoint_path = self.load_tf_dir
-		# 	resume_checkpoint_tf = Checkpoint.load(latest_checkpoint_path)
-		# 	model = resume_checkpoint_tf.model.to(device)
-		# 	model.reset_dropout(dropout_rate)
-		# 	model.reset_use_gpu(self.use_gpu)
-		# 	model.reset_batch_size(self.batch_size)
-
-		# 	print('TF Model dir: {}'.format(latest_checkpoint_path))
-		# 	print('TF Model laoded')
-
-
-		self.resume = resume
-		if resume:
-			latest_checkpoint_path = Checkpoint.get_latest_epoch_checkpoint(self.load_dir)
-			print('resuming {} ...'.format(latest_checkpoint_path))
-			resume_checkpoint = Checkpoint.load(latest_checkpoint_path)
-			model = resume_checkpoint.model
-			self.optimizer = resume_checkpoint.optimizer
-
-			# check var
-			model.set_var('attention_forcing', self.attention_forcing)
-			model.set_var('debug_count', 0)
-			model.reset_use_gpu(self.use_gpu)
-			print('attention forcing: {}'.format(model.attention_forcing))
-			print('use gpu: {}'.format(model.use_gpu))
-			if self.use_gpu:
-				model = model.cuda()
-			else:
-				model = model.cpu()
-
-			# A walk around to set optimizing parameters properly
-			resume_optim = self.optimizer.optimizer
-			defaults = resume_optim.param_groups[0]
-			defaults.pop('params', None)
-			defaults.pop('initial_lr', None)
-			self.optimizer.optimizer = resume_optim.__class__(model.parameters(), **defaults)
-
-			start_epoch = resume_checkpoint.epoch
-			step = resume_checkpoint.step
-
-		else:
-			start_epoch = 1
-			step = 0
-
-			for name, param in model.named_parameters():
-				log = self.logger.info('{}:{}'.format(name, param.size()))
-				# check embedder init
-				# if 'embedder' in name:
-				# 	print('{}:{}'.format(name, param[5]))
-
-			if optimizer is None:
-				optimizer = Optimizer(torch.optim.Adam(model.parameters(), 
-							lr=self.learning_rate), max_grad_norm=self.max_grad_norm) # 5 -> 1
-
-				# set scheduler
-				# optimizer.set_scheduler(torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer.optimizer, 'min'))
-
-			self.optimizer = optimizer
-
-		self.logger.info("Optimizer: %s, Scheduler: %s" % (self.optimizer.optimizer, self.optimizer.scheduler))
-
-		self._train_epoches(train_set, model, num_epochs, start_epoch, step, dev_set=dev_set)
-		
-		return model
 
 
 class Trainer_dual(object):
@@ -3083,7 +2546,6 @@ def main():
 
 		# run training
 		seq2seq_dd = t.train(train_set, seq2seq_dd, num_epochs=config['num_epochs'], resume=resume, dev_set=dev_set)
-
 
 	if config['train_mode'] == 'aaf_base':
 

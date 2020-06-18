@@ -43,4 +43,10 @@ TRANSLATE_EPOCH=30
 # tmp='\> \.\/asup\-log\.txt'
 # echo asup $tmp
 
-$PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/asup.py
+# $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/asup.py
+
+for f in ${EXP_DIR}/results/models-v9enfr/aaf-v0020-sched-fr4.0/checkpoints_epoch/*; do
+	ep=$(basename $f)
+	echo $ep
+done
+
