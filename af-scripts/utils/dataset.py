@@ -312,6 +312,98 @@ class Dataset(object):
 		return batches, self.vocab_size
 
 
+	def construct_batches_with_attscore_sort(self, is_train=False, flag_sort=True):
+
+		"""
+			Add reference att scores to each batch; 
+			1. assuming seq > max_seqlen has been filtered out for both attscore & sentence ids
+			2. truncating down last batch only happens in batchify & is_train=True
+			
+			Args:
+				is_train: switch on shuffling is is_train
+			Returns:
+				batches of dataset
+				src: 			a  cat cat sat on the mat EOS PAD PAD ...
+				tgt:		BOS a  cat sat on the mat EOS PAD PAD PAD ...
+				attscore:	31 * 32 array 
+		"""
+
+		# same length for attscore & word ids 
+		# both removed sentences that are too long
+		# number of sentences not reduced before batchify!
+		self.train_attscores = list(self.attscore)
+		assert len(self.train_attscores) == len(self.train_src_word_ids), \
+				'mismatch #sent in att:src {}:{}'.format(len(self.train_attscores), len(self.train_src_word_ids))
+
+		# shuffle
+		_x = list(zip(self.train_src_word_ids, self.train_tgt_word_ids,
+				self.train_src_sentence_lengths, self.train_tgt_sentence_lengths, self.train_attscores))
+
+		# import pdb; pdb.set_trace()
+		if flag_sort:
+			_x.sort(key = lambda x: x[3])
+		elif is_train:
+			random.shuffle(_x)
+		# pdb.set_trace()
+
+		train_src_word_ids, train_tgt_word_ids, \
+			train_src_sentence_lengths, train_tgt_sentence_lengths, train_attscores = zip(*_x)
+
+		batches = []
+
+		for i in range(int(self.num_training_sentences/self.batch_size)):
+			i_start = i * self.batch_size
+			i_end = i_start + self.batch_size
+			batch = {'src_word_ids': train_src_word_ids[i_start:i_end],
+				'tgt_word_ids': train_tgt_word_ids[i_start:i_end],
+				'src_sentence_lengths': train_src_sentence_lengths[i_start:i_end],
+				'tgt_sentence_lengths': train_tgt_sentence_lengths[i_start:i_end],
+				'attscores': train_attscores[i_start:i_end]}
+			batches.append(batch)
+
+		# add the last batch (underfull batch - add paddings)
+		if not is_train and self.batch_size * len(batches) < self.num_training_sentences:
+			dummy_id = [PAD] * self.max_seq_len
+			dummy_length = 0
+			dummy_prob = np.zeros((self.max_seq_len-1, self.max_seq_len))
+			# dummy_prob.astype(np.double)
+			# print(dummy_prob)
+			
+			i_start = self.batch_size * len(batches)
+			i_end = self.num_training_sentences
+			pad_i_start = i_end
+			pad_i_end = i_start + self.batch_size
+			
+			last_src_word_ids = []
+			last_tgt_word_ids = []
+			last_src_sentence_lengths = []
+			last_tgt_sentence_lengths = []
+			last_attscores = []
+
+			last_src_word_ids.extend(train_src_word_ids[i_start:i_end])
+			last_src_word_ids.extend([dummy_id] * (pad_i_end - pad_i_start))
+			last_tgt_word_ids.extend(train_tgt_word_ids[i_start:i_end])
+			last_tgt_word_ids.extend([dummy_id] * (pad_i_end - pad_i_start))
+			last_src_sentence_lengths.extend(train_src_sentence_lengths[i_start:i_end])
+			last_src_sentence_lengths.extend([dummy_length] * (pad_i_end - pad_i_start))
+			last_tgt_sentence_lengths.extend(train_tgt_sentence_lengths[i_start:i_end])
+			last_tgt_sentence_lengths.extend([dummy_length] * (pad_i_end - pad_i_start))
+			last_attscores.extend(train_attscores[i_start:i_end])
+			last_attscores.extend([dummy_prob] * (pad_i_end - pad_i_start))
+
+			batch = {'src_word_ids': last_src_word_ids,
+				'tgt_word_ids': last_tgt_word_ids,
+				'src_sentence_lengths': last_src_sentence_lengths,
+				'tgt_sentence_lengths': last_tgt_sentence_lengths,
+				'attscores': last_attscores}
+			batches.append(batch)
+
+		random.shuffle(batches)
+		print("num_batches: ", len(batches))
+
+		return batches, self.vocab_size
+
+
 def load_pretrained_embedding(word2id, embedding_matrix, embedding_path):
 
 	""" assign value to src_word_embeddings and tgt_word_embeddings """

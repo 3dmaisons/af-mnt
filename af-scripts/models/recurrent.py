@@ -1098,6 +1098,266 @@ class Seq2Seq_DD(nn.Module):
 
 
 
+class Seq2Seq_DD_paf(Seq2Seq_DD):
+	"""
+	same model;
+	the difference is AF -> partial AF, hence the arg nb_tf_tokens;
+	the split is for compatibility
+	"""
+	def forward(self, src, tgt=None, 
+		hidden=None, is_training=False, teacher_forcing_ratio=1.0,
+		att_key_feats=None, att_scores=None, beam_width=0, nb_tf_tokens=0):
 
+		"""
+			Args:
+				src: list of src word_ids [batch_size, max_seq_len, word_ids]
+				tgt: list of tgt word_ids
+				hidden: initial hidden state
+				is_training: whether in eval or train mode
+				teacher_forcing_ratio: default at 1 - always teacher forcing
+			Returns:
+				decoder_outputs: list of step_output - log predicted_softmax [batch_size, 1, vocab_size_dec] * (T-1)
+				ret_dict
+		"""
+
+		# import pdb; pdb.set_trace()
+
+		if self.use_gpu and torch.cuda.is_available():
+			global device
+			device = torch.device('cuda')
+		else:
+			device = torch.device('cpu')	
+			
+		# ******************************************************
+		# 0. init var
+		ret_dict = dict()
+		ret_dict[KEY_ATTN_SCORE] = []
+		ret_dict[KEY_ATTN_REF] = []
+
+		decoder_outputs = []
+		sequence_symbols = []
+		batch_size = self.batch_size
+		lengths = np.array([self.max_seq_len] * batch_size)
+		self.beam_width = beam_width
+
+		# src mask
+		mask_src = src.data.eq(PAD)
+		# print(mask_src[0])
+
+		# ******************************************************
+		# 1. convert id to embedding 
+		emb_src = self.embedding_dropout(self.embedder_enc(src))
+		if type(tgt) == type(None):
+			tgt = torch.Tensor([BOS]).repeat(src.size()).type(torch.LongTensor).to(device=device)
+		emb_tgt = self.embedding_dropout(self.embedder_dec(tgt))
+
+		# ******************************************************
+		# 2. run enc 
+		enc_outputs, enc_hidden = self.enc(emb_src, hidden)
+		enc_outputs = self.dropout(enc_outputs)\
+						.view(self.batch_size, self.max_seq_len, enc_outputs.size(-1))
+
+		if self.num_unilstm_enc != 0:
+			if not self.residual:
+				enc_hidden_uni_init = None
+				enc_outputs, enc_hidden_uni = self.enc_uni(enc_outputs, enc_hidden_uni_init)
+				enc_outputs = self.dropout(enc_outputs)\
+								.view(self.batch_size, self.max_seq_len, enc_outputs.size(-1))
+			else:
+				enc_hidden_uni_init = None
+				enc_hidden_uni_lis = []
+				for i in range(self.num_unilstm_enc):
+					enc_inputs = enc_outputs
+					enc_func = getattr(self.enc_uni, 'l'+str(i))
+					enc_outputs, enc_hidden_uni = enc_func(enc_inputs, enc_hidden_uni_init)
+					enc_hidden_uni_lis.append(enc_hidden_uni)
+					if i < self.num_unilstm_enc - 1: # no residual for last layer
+						enc_outputs = enc_outputs + enc_inputs
+					enc_outputs = self.dropout(enc_outputs)\
+									.view(self.batch_size, self.max_seq_len, enc_outputs.size(-1))
+
+		# ******************************************************
+		# 2.5 att inputs: keys n values 
+		if type(att_key_feats) == type(None):
+			att_keys = enc_outputs
+		else:
+			# att_key_feats: b x max_seq_len x additional_key_size
+			assert self.additional_key_size == att_key_feats.size(-1), 'Mismatch in attention key dimension!'
+			att_keys = torch.cat((enc_outputs, att_key_feats), dim=2)
+		att_vals = enc_outputs
+		# print(att_keys.size())
+
+		# ******************************************************
+		# 3. init hidden states - TODO 
+		dec_hidden = None
+
+		# ======================================================
+		# decoder
+		def decode(step, step_output, step_attn):
+			
+			"""
+				Greedy decoding
+				Note:
+					it should generate EOS, PAD as used in training tgt
+				Args:
+					step: step idx
+					step_output: log predicted_softmax [batch_size, 1, vocab_size_dec]
+					step_attn: attention scores - (batch_size x tgt_len(query_len) x src_len(key_len)
+				Returns:
+					symbols: most probable symbol_id [batch_size, 1]
+			"""
+
+			ret_dict[KEY_ATTN_SCORE].append(step_attn)
+			decoder_outputs.append(step_output)
+			symbols = decoder_outputs[-1].topk(1)[1]
+			sequence_symbols.append(symbols)
+			# print(symbols)
+			# input('...')
+
+			eos_batches = torch.max(symbols.data.eq(EOS), symbols.data.eq(PAD)) # equivalent to logical OR
+			# eos_batches = symbols.data.eq(PAD) 
+			if eos_batches.dim() > 0:
+				eos_batches = eos_batches.cpu().view(-1).numpy()
+				update_idx = ((lengths > step) & eos_batches) != 0
+				lengths[update_idx] = len(sequence_symbols)
+				# print(lengths)
+				# input('...')
+			return symbols
+		# ======================================================
+
+
+		# ******************************************************
+		# 4. run dec + att + shared + output
+		"""
+			teacher_forcing_ratio = 1.0 -> always teacher forcing
+
+			E.g.: 
+				emb_tgt         = <s> w1 w2 w3 </s> <pad> <pad> <pad>   [max_seq_len]
+				tgt_chunk in    = <s> w1 w2 w3 </s> <pad> <pad>         [max_seq_len - 1]
+				predicted       =     w1 w2 w3 </s> <pad> <pad> <pad>   [max_seq_len - 1]
+				(shift-by-1)
+		"""
+		attention_forcing = self.attention_forcing
+		if not is_training:
+			 attention_forcing = False
+			 teacher_forcing_ratio = 0.0
+
+		# beam search decoding
+		if not is_training and self.beam_width > 1:
+			decoder_outputs, decoder_hidden, metadata = \
+					self.beam_search_decoding(att_keys, att_vals,
+					dec_hidden, mask_src, beam_width=self.beam_width)
+
+			return decoder_outputs, decoder_hidden, metadata
+
+		# no beam search decoding 
+		tgt_chunk = emb_tgt[:, 0].unsqueeze(1) # BOS
+		cell_value = torch.FloatTensor([0]).repeat(self.batch_size, 1, self.hidden_size_shared).to(device=device)
+		prev_c = torch.FloatTensor([0]).repeat(self.batch_size, 1, self.max_seq_len).to(device=device)
+
+		if not attention_forcing:
+
+			# tf at sentence level
+			use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+			for idx in range(self.max_seq_len - 1):
+
+				predicted_softmax, dec_hidden, step_attn, c_out, cell_value = \
+					self.forward_step(att_keys, att_vals, tgt_chunk, cell_value,
+										dec_hidden, mask_src, prev_c)
+				step_output = predicted_softmax.squeeze(1)
+				symbols = decode(idx, step_output, step_attn)
+				# print(symbols)
+				# print(tgt[0][idx+1])
+				prev_c = c_out
+				if use_teacher_forcing:
+					tgt_chunk = emb_tgt[:, idx+1].unsqueeze(1)
+					if self.debug_count < 1:
+						print('w/o attention forcing + w/ teacher forcing')
+						self.debug_count += 1
+					# print('here')
+					# print(tgt[:, idx+1])
+					# print(symbols.view(-1))
+					# input('...')
+				else:
+					tgt_chunk = self.embedder_dec(symbols)
+					if self.debug_count < 1:
+						print('w/o attention forcing + w/o teacher forcing')
+						self.debug_count += 1
+				# print('target query size: {}'.format(tgt_chunk.size()))
+				# print(lengths)
+		else:
+			# init
+			# print('here')
+			tgt_chunk_ref = tgt_chunk
+			tgt_chunk_hyp = tgt_chunk
+			cell_value_ref = cell_value
+			cell_value_hyp = cell_value
+			prev_c_ref = prev_c
+			prev_c_hyp = prev_c
+			dec_hidden_ref = dec_hidden
+			dec_hidden_hyp = dec_hidden
+
+			# tf at sentence level
+			use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+			# loop
+			for idx in range(self.max_seq_len - 1):
+
+				assert type(att_scores) != type(None), 'empty att ref scores!'
+				if isinstance(att_scores, list):
+					# used in dual training
+					step_attn_ref_detach = att_scores[idx].detach() 
+				else:
+					# used in fixed ref att training
+					step_attn_ref_detach = att_scores[:, idx,:].unsqueeze(1)
+				step_attn_ref_detach = step_attn_ref_detach.type(torch.FloatTensor).to(device=device)
+				# print(step_attn_ref_detach.size())
+				# print('here')
+				# input('...')
+				if self.debug_count < 1:
+					print('w/ attention forcing')
+
+				# hyp
+				ret_dict[KEY_ATTN_REF].append(step_attn_ref_detach)
+				predicted_softmax_hyp, dec_hidden_hyp, step_attn_hyp, c_out_hyp, cell_value_hyp = \
+					self.forward_step(att_keys, att_vals, tgt_chunk_hyp, cell_value_hyp,
+										dec_hidden_hyp, mask_src, prev_c_hyp, att_ref=step_attn_ref_detach)
+				step_output_hyp = predicted_softmax_hyp.squeeze(1)
+				symbols_hyp = decode(idx, step_output_hyp, step_attn_hyp)
+				prev_c_hyp = c_out_hyp
+
+				if idx < nb_tf_tokens: # use_teacher_forcing
+					tgt_chunk_hyp = emb_tgt[:, idx+1].unsqueeze(1)
+					# print('here')
+					# print(tgt_chunk)
+					if self.debug_count < 1:
+						print('w/ teacher forcing')
+						self.debug_count += 1
+
+				else:
+					tgt_chunk_hyp = self.embedder_dec(symbols_hyp)
+					if self.debug_count < 1:
+						print('w/o teacher forcing')
+						self.debug_count += 1
+
+				# tgt_chunk_hyp = self.embedder_dec(symbols_hyp)
+				# print('step_attn_hyp', step_attn_hyp)
+				# print(step_attn_ref_detach)
+				# print(step_attn_hyp)
+				# print(src)
+				# print(tgt)
+				# input('...')
+
+		# print('...')
+		ret_dict[KEY_SEQUENCE] = sequence_symbols
+		ret_dict[KEY_LENGTH] = lengths.tolist()
+
+		if hasattr(self, 'flag_stack_outputs'):
+			if self.flag_stack_outputs:
+				# print('stack')
+				decoder_outputs = torch.stack(decoder_outputs, dim=2)
+				ret_dict['attention_score'] = torch.cat(ret_dict['attention_score'], dim=1)
+				ret_dict['attention_ref'] = torch.cat(ret_dict['attention_ref'], dim=1)
+
+		return decoder_outputs, dec_hidden, ret_dict
 
 
