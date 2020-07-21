@@ -36,7 +36,7 @@ cd $EXP_DIR
 export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
-MODE=train # train translate
+MODE=translate # train translate
 # TRANSLATE_EPOCH=20
 
 # SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-aftf/
@@ -52,13 +52,13 @@ FR_MAX=3.15
 # FR_MAX=0.0
 SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-fr${FR_MAX}/
 
-prefix=iwslt15-enfr
-event=IWSLT15
-testset=tst2013
+# prefix=iwslt15-enfr
+# event=IWSLT15
+# testset=tst2013
 
-# prefix=en-fr-2015
-# event=IWSLT16
-# testset=tst2014
+prefix=en-fr-2015
+event=IWSLT16
+testset=tst2014
 
 case $MODE in
 "train")

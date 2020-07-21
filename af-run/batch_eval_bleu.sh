@@ -23,62 +23,96 @@ cd $EXP_DIR
 # 1.0 setup tools
 SCRIPTS=/home/dawna/tts/qd212/models/af/af-lib/mosesdecoder/scripts
 DETOKENIZER=$SCRIPTS/tokenizer/detokenizer.perl
-LANGUAGE=fr
 BLEU_DETOK=$SCRIPTS/generic/multi-bleu-detok.perl
 
+# 1.1 select tgt language and testset
+LANGUAGE=fr # fr de
+testset_fr=tst2013 # tst2013 tst2014
+testset_de=tst-COMMON
 
-# 1.1 select testset
+case $LANGUAGE in
+"fr")
+	testset=$testset_fr
+	case $testset in
+	"tst2014")
+		refdir=af-lib/en-fr-2015/iwslt15_en_fr/IWSLT16.TED.${testset}.en-fr.DETOK.fr
+		;;
+	"tst2013")
+		refdir=af-lib/en-fr-2015/iwslt15_en_fr/IWSLT15.TED.${testset}.en-fr.DETOK.fr
+		# refdir=af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.${testset}.en-fr.fr
+		# refdir=af-lib/en-fr-2015/iwslt15_en_fr/IWSLT15.TED.${testset}.en-fr.fr
+		;;
+	esac
+	;;
+"de")
+	testset=$testset_de
+	refdir=af-lib/tst-COMMON.de
+	# refdir=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.de
 
-# prefix=iwslt15-enfr
-# event=IWSLT15
-# testset=tst2013
-
-# # prefix=en-fr-2015
-# # event=IWSLT16
-# # testset=tst2014
-
-# # refdir=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
-# refdir=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.DETOK.fr
-
-
-testset=tst2013
-refdir=af-lib/en-fr-2015/iwslt15_en_fr/IWSLT15.TED.${testset}.en-fr.DETOK.fr
-
-# refdir=af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.${testset}.en-fr.fr
-# refdir=af-lib/en-fr-2015/iwslt15_en_fr/IWSLT15.TED.${testset}.en-fr.fr
-
-
-# testset=tst2014
-# refdir=af-lib/en-fr-2015/iwslt15_en_fr/IWSLT16.TED.${testset}.en-fr.DETOK.fr
-
-
-
+	;;
+esac
 
 
 
 # 1.2 select model
+# indir=af-models/tf/${testset}
 
 # indir=results/models-v9enfr/tf-v0001/${testset}
-# indir=results/models-v9enfr/af-v0001/${testset}
-# indir=results/models-v9enfr/afdynamic-v0001/${testset}
-# indir=results/models-v9enfr/sched-af-v0001/${testset}
+	# indir=results/models-v9enfr/af-v0001/${testset}
+	# indir=results/models-v9enfr/afdynamic-v0001/${testset}
+	# indir=results/models-v9enfr/sched-af-v0001/${testset}
 
 # indir=results/models-v9enfr/aaf-v0001-tf/${testset}
-indir=results/models-v9enfr/aaf-v0002-tf/${testset}
-# indir=results/models-v9enfr/aaf-v0002-tf-bs50-v2/${testset}
+	# indir=results/models-v9enfr/aaf-v0002-tf/${testset}
+	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-v2/${testset}
+	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain/${testset}
+	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-asup/${testset}
+	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr0.001/${testset}
+	# indir=results/models-v9enfr/aaf-v0004-ss/${testset}
+	# indir=results/models-v9enfr/aaf-v0004-ss-max0.2linear/${testset}
+	# indir=results/models-v9enfr/aaf-v0004-ss-max0.2linear-asup-check/${testset}
 
 # indir=results/models-v9enfr/aaf-v0010-af/${testset}
-# indir=results/models-v9enfr/aaf-v0013-af-fixkl/${testset}
-# indir=results/models-v9enfr/aaf-v0013-aftf/${testset}
-# indir=results/models-v9enfr/aaf-v0013-aftf-bs128/${testset}
+	# indir=results/models-v9enfr/aaf-v0013-af-fixkl/${testset}
+	# indir=results/models-v9enfr/aaf-v0013-aftf/${testset}
+	# indir=results/models-v9enfr/aaf-v0013-aftf-bs128/${testset}
+	# indir=results/models-v9enfr/aaf-v0013-aftf-pretrain/${testset}
+	# indir=results/models-v9enfr/aaf-v0013-aftf-pretrain-lr0.001/${testset}
 
 # indir=results/models-v9enfr/aaf-v0020-sched-debug/${testset}
-# indir=results/models-v9enfr/aaf-v0020-sched-log/${testset}
-# indir=results/models-v9enfr/aaf-v0020-sched-fr15/${testset}
-# indir=results/models-v9enfr/aaf-v0020-sched-fr0.0/${testset}
-# indir=results/models-v9enfr/aaf-v0020-sched-fr2.0/${testset}
-# indir=results/models-v9enfr/aaf-v0020-sched-fr3.25/${testset}
-# indir=results/models-v9enfr/aaf-v0020-sched-fr4.0/${testset}
+	# indir=results/models-v9enfr/aaf-v0020-sched-log/${testset}
+	# indir=results/models-v9enfr/aaf-v0020-sched-fr15/${testset}
+	# indir=results/models-v9enfr/aaf-v0020-sched-fr0.0/${testset}
+	# indir=results/models-v9enfr/aaf-v0020-sched-fr2.0/${testset}
+	# indir=results/models-v9enfr/aaf-v0020-sched-fr3.25/${testset}
+	# indir=results/models-v9enfr/aaf-v0020-sched-fr4.0/${testset}
+
+# indir=results/models-v9enfr/aaf-v0030-sched-fr2.0-pretrain/${testset}
+	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.0-pretrain-v2/${testset}
+	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.1-pretrain/${testset}
+	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.0-pretrain-lr0.001/${testset}
+
+# indir=results/models-v9enfr/aaf-v0040-paf-nbFrToken20/${testset}
+	# indir=results/models-v9enfr/aaf-v0040-paf/${testset}
+	# indir=results/models-v9enfr/aaf-v0040-paf-nbFrToken5-lr0.001/${testset}
+
+# indir=results/models-v9enfr/aaf-v0050-oaf/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-asup-detach/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-asup-sched/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-asup/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-notf/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-sched/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-gamma50/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.6/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.5-alwaysKL/${testset}
+indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-noKL/${testset}
+
+
+
+
+# indir=results/models-v0ende/v0000-tf-lr0.001/${testset}
+
 
 
 # 2.0 detok and bleu
@@ -135,3 +169,16 @@ done
 # 	python /home/dawna/tts/qd212/models/af/bleu_scorer.py $indir/epoch_$i/translate.txt $refdir > $indir/epoch_$i/bleu.log
 # done
 
+
+# asup
+
+# prefix=iwslt15-enfr
+# event=IWSLT15
+# testset=tst2013
+
+# # prefix=en-fr-2015
+# # event=IWSLT16
+# # testset=tst2014
+
+# # refdir=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
+# refdir=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.DETOK.fr

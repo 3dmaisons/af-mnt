@@ -6,7 +6,7 @@ import codecs
 import numpy as np
 import random
 
-from utils.config import PAD, UNK, BOS, EOS
+from utils.config import PAD, UNK, BOS, EOS, SPC
 
 class Dataset(object):
 
@@ -21,7 +21,8 @@ class Dataset(object):
 				attscore_path=None,
 				max_seq_len=32,
 				batch_size=64,
-				use_gpu=True
+				use_gpu=True,
+				use_type='word'
 				):
 
 		super(Dataset, self).__init__()
@@ -34,6 +35,7 @@ class Dataset(object):
 		self.max_seq_len = max_seq_len
 		self.batch_size = batch_size
 		self.use_gpu = use_gpu
+		self.use_type = use_type
 
 		self.load_vocab()
 		self.load_sentences()
@@ -54,14 +56,20 @@ class Dataset(object):
 		self.src_id2word = collections.OrderedDict()
 		self.tgt_id2word = collections.OrderedDict()
 
+		def get_word_strip(w):
+			return word.strip().split()[0] # remove \n, works in both cases
+			# if self.use_type=='word': return word.strip() # remove \n
+			# elif self.use_type=='char': return word.strip().split()[0] # remove \n
+			# else: print('WARNING word not processed')
+
 		for i, word in enumerate(vocab_src_lines):
-			word = word.strip() # remove \n
+			word = get_word_strip(word)
 			self.vocab_src.append(word)
 			self.src_word2id[word] = i
 			self.src_id2word[i] = word
 
 		for i, word in enumerate(vocab_tgt_lines):
-			word = word.strip() # remove \n
+			word = get_word_strip(word)
 			self.vocab_tgt.append(word)
 			self.tgt_word2id[word] = i
 			self.tgt_id2word[i] = word
@@ -116,13 +124,19 @@ class Dataset(object):
 		train_src_word_ids = []
 		train_src_sentence_lengths = []
 		train_tgt_word_ids = []
-		train_tgt_sentence_lengths = []		
+		train_tgt_sentence_lengths = []
+
+		# import pdb #; pdb.set_trace()
 
 		for idx in range(len(self.src_sentences)):
 			src_sentence = self.src_sentences[idx]
 			tgt_sentence = self.tgt_sentences[idx]
 			src_words = src_sentence.strip().split()
-			tgt_words = tgt_sentence.strip().split()
+			# tgt_words = tgt_sentence.strip().split()
+			if self.use_type == 'char':
+				tgt_words = tgt_sentence.strip()
+			elif self.use_type == 'word':
+				tgt_words = tgt_sentence.strip().split()
 
 			# ignore long seq
 			if len(src_words) > self.max_seq_len - 1 or len(tgt_words) > self.max_seq_len - 2:
@@ -130,10 +144,17 @@ class Dataset(object):
 				# tgt + BOS + EOS
 				continue
 
+			# print(src_sentence, src_words)
+			# print(tgt_sentence, tgt_words)
+			# pdb.set_trace()
+
 			# source
 			src_ids = [PAD] * self.max_seq_len
 			for i, word in enumerate(src_words):
-				if word in self.src_word2id:
+				if word==' ':
+					assert self.use_type=='char'
+					src_ids[i] = SPC
+				elif word in self.src_word2id:
 					src_ids[i] = self.src_word2id[word]
 				else:
 					src_ids[i] = UNK
@@ -145,13 +166,20 @@ class Dataset(object):
 			tgt_ids = [PAD] * self.max_seq_len
 			tgt_ids[0] = BOS
 			for i, word in enumerate(tgt_words):
-				if word in self.tgt_word2id:
+				if word==' ':
+					assert self.use_type=='char'
+					tgt_ids[i+1] = SPC
+				elif word in self.tgt_word2id:
 					tgt_ids[i+1] = self.tgt_word2id[word]
 				else:
 					tgt_ids[i+1] = UNK
 			tgt_ids[i+2] = EOS
 			train_tgt_word_ids.append(tgt_ids)
 			train_tgt_sentence_lengths.append(len(tgt_words)+2) # include EOS + BOS
+
+			# print(src_ids)
+			# print(tgt_ids)
+			# pdb.set_trace()
 
 		assert (len(train_src_word_ids) == len(train_tgt_word_ids)), "train_src_word_ids != train_tgt_word_ids"
 		self.num_training_sentences = len(train_src_word_ids)

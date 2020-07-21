@@ -35,8 +35,11 @@ cd /home/dawna/tts/qd212/models/af/
 export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
-MODE=translate # train translate
-SAVE_DIR=results/models-v9enfr/tf-v0001/
+MODE=translate # train translate translate_tf
+TRANSLATE_EPOCH=24 # 50
+
+# SAVE_DIR=results/models-v9enfr/tf-v0001/
+SAVE_DIR=af-models/tf/
 
 case $MODE in
 "train")
@@ -95,12 +98,28 @@ case $MODE in
         --test_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2013.en-fr.fr \
         --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
         --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
-        --load ${SAVE_DIR}checkpoints_epoch/50 \
-        --test_path_out ${SAVE_DIR}tst2013/epoch_50/ \
+        --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
+        --test_path_out ${SAVE_DIR}tst2013/epoch_${TRANSLATE_EPOCH}/ \
         --max_seq_len 200 \
-        --batch_size 32 \
+        --batch_size 64 \
+        --use_gpu True \
+        --beam_width 1
+    ;;
+"translate_tf")
+    echo MODE: translate
+    $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
+        --test_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2013.en-fr.en \
+        --test_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2013.en-fr.fr \
+        --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
+        --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
+        --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
+        --test_path_out ${SAVE_DIR}tst2013/epoch_${TRANSLATE_EPOCH}_tf/ \
+        --max_seq_len 200 \
+        --batch_size 64 \
         --use_gpu True \
         --beam_width 1 \
+        --mode 7 \
+        --use_teacher True
     ;;
 esac
 

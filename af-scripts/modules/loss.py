@@ -373,6 +373,58 @@ class KLDivLoss(Loss):
 			# print(float(self.mask_utt_fr.mean()),)
 			self.fr_percent = self.mask_utt_fr.mean()
 
+	def eval_batch_seq_with_mask_stable(self, outputs, target, mask, outputs_fr=None, epoch=None):
+		"""
+		unlike previous version, compute all steps in one go
+		outputs, outputs_fr, target [B T D] = [B T_out-1 T_in]
+		mask [B T] = [B T_out-1]
+		"""
+
+		# asup debug only
+		import pdb; 
+		print(outputs.size(), target.size(), mask.size())
+		print('out', outputs[0,0,:])
+		print('tgt', target[0,0,:])
+		pdb.set_trace()
+	
+		mask0 = mask.unsqueeze(2).repeat(1, 1, target.size(-1))
+		mask1 = target.gt(0)
+		mask2 = outputs.gt(0)
+		mask3 = (mask0 * mask1 * mask2).int().float().detach()
+
+		eps = float(1e-10)
+		outputs += eps
+		target += eps
+		loss = (mask3 * self.criterion(torch.log(outputs), target)).sum(2)
+		loss_utt = (loss).sum(1) # loss & loss*mask returns diff results, when using binary mask, but float mask is fine
+
+		if (outputs_fr is None) and (epoch is None):
+			self.acc_loss += (loss_utt).sum()
+		else:
+			mask2 = outputs_fr.gt(0)
+			mask3 = (mask0 * mask1 * mask2).int().float().detach()
+			outputs_fr[outputs_fr==0] = eps
+			loss_fr = (mask3 * self.criterion(torch.log(outputs_fr), target)).sum(2)
+			loss_utt_fr = (loss_fr).sum(1)
+
+			# get mask_utt [B]
+			self.mask_utt_fr = (loss_utt_fr < (loss_utt * self.fr_loss_max_rate)).int().float().detach()
+
+			# get total loss
+			self.acc_loss += ((1-self.mask_utt_fr) * loss_utt).sum()
+			self.acc_loss += (self.mask_utt_fr * loss_utt_fr).sum()
+
+			
+		if torch.isnan(self.acc_loss).any():
+			print('loss_utt', loss_utt)
+			if outputs_fr is not None: print('loss_utt_fr', loss_utt_fr)
+			import pdb; pdb.set_trace()
+		assert not torch.isnan(self.acc_loss).any(), 'self.acc_loss is NaN, look into it' # tmp safety code
+		self.norm_term += outputs.size()[1] # only norm over time for consistency
+
+		if epoch:
+			self.fr_percent = self.mask_utt_fr.mean()
+
 
 
 class NLLLoss_sched(NLLLoss):

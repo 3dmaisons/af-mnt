@@ -50,13 +50,44 @@ def load_arguments(parser):
 	parser.add_argument('--use_gpu', type=str, default='False', help='whether or not using GPU')
 	parser.add_argument('--use_teacher', type=str, default='False', help='whether or not feeding reference sequence')
 	parser.add_argument('--mode', type=int, default=2, help='which mode to run on')
+	parser.add_argument('--smooth_epochs_str', type=str, default='', help='epochs to smooth')
 	parser.add_argument('--gen_mode', type=str, default='afdynamic', help='tf af generation mode\
 											afdynamic: tf: y_a; af: a_t \
 											afstatic: tf: y; af: a_t ')
+	parser.add_argument('--use_type', type=str, default='word', help='word or char')
 
 	return parser
 
-def translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width):
+
+def load_model_single(load_dir):
+	# latest_checkpoint_path = Checkpoint.get_latest_checkpoint(load_dir)
+	# latest_checkpoint_path = Checkpoint.get_thirdlast_checkpoint(load_dir)
+	latest_checkpoint_path = load_dir
+	resume_checkpoint = Checkpoint.load(latest_checkpoint_path)
+	model = resume_checkpoint.model
+	return model
+
+def load_model_multi(load_dir, smooth_epochs_str):
+	lst_checkpoint_path = [os.path.join(load_dir, ep) for ep in smooth_epochs_str.split('_')]
+	lst_model_state_dict = [Checkpoint.load(ckpt).model.state_dict() for ckpt in lst_checkpoint_path]
+
+	model = Checkpoint.load(lst_checkpoint_path[0]).model
+	mean_state_dict = model.state_dict()
+	for key in mean_state_dict.keys():
+		mean_state_dict[key] = sum(d[key] for d in lst_model_state_dict) / float(len(lst_model_state_dict))
+
+	model.load_state_dict(mean_state_dict)
+
+	# for key in mean_state_dict.keys():
+	# 	for sd in lst_model_state_dict:
+	# 		print(key, sd[key])
+	# 	print(model.state_dict()[key])
+	# 	break
+	# import pdb; pdb.set_trace()
+	return model
+	
+
+def translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, smooth_epochs_str=''):
 
 	""" 
 		no reference tgt given - Run translation.
@@ -69,14 +100,13 @@ def translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_widt
 	"""
 
 	# load model
-	# latest_checkpoint_path = Checkpoint.get_latest_checkpoint(load_dir)
-	# latest_checkpoint_path = Checkpoint.get_thirdlast_checkpoint(load_dir)
-	latest_checkpoint_path = load_dir
-	resume_checkpoint = Checkpoint.load(latest_checkpoint_path)
-
-	model = resume_checkpoint.model
-	print('Model dir: {}'.format(latest_checkpoint_path))
-	print('Model laoded')
+	if smooth_epochs_str=='':
+		model = load_model_single(load_dir)
+	else:
+		model = load_model_multi(load_dir, smooth_epochs_str)
+	
+	print('Model dir: {}'.format(load_dir+smooth_epochs_str))
+	print('Model loaded')
 
 	# reset batch_size:
 	model.reset_max_seq_len(max_seq_len)
@@ -130,6 +160,8 @@ def translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_widt
 					for word in seqwords[i]:
 						if word == '<pad>':
 							continue
+						elif word == '<spc>':
+							words.append(' ')
 						elif word == '</s>':
 							break
 						else:
@@ -137,7 +169,10 @@ def translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_widt
 					if len(words) == 0:
 						outline = ''
 					else:
-						outline = ' '.join(words)
+						if test_set.use_type == 'word':
+							outline = ' '.join(words)
+						elif test_set.use_type == 'char':
+							outline = ''.join(words)
 					f.write('{}\n'.format(outline))
 					# if i == 0: 
 					# 	print(outline)
@@ -1458,6 +1493,8 @@ def main():
 	beam_width = config['beam_width']
 	use_gpu = config['use_gpu']
 	gen_mode = config['gen_mode']
+	smooth_epochs_str = config['smooth_epochs_str']
+	use_type = config['use_type']
 	print('attscore dir: {}'.format(test_attscore_path))
 	print('output dir: {}'.format(test_path_out))
 
@@ -1489,7 +1526,7 @@ def main():
 						path_vocab_src, path_vocab_tgt,
 						attscore_path=test_attscore_path,
 						max_seq_len=max_seq_len, batch_size=batch_size,
-						use_gpu=use_gpu)
+						use_gpu=use_gpu, use_type=use_type)
 	print('Testset loaded')
 	sys.stdout.flush()
 
@@ -1501,7 +1538,7 @@ def main():
 		print(accuracy)
 
 	elif MODE == 2: 
-		translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width)
+		translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, smooth_epochs_str=smooth_epochs_str)
 
 	elif MODE == 3:
 		# run debugging

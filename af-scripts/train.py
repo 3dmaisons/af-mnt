@@ -39,6 +39,9 @@ KEY_MODEL_STRUCT = 'model_struct'
 def load_arguments(parser):
 
 	""" lstm based NMT model """
+	def none_or_str(value):
+		if value == 'None': return None
+		else: return value
 
 	# paths
 	parser.add_argument('--train_path_src', type=str, required=True, help='train src dir')
@@ -91,7 +94,7 @@ def load_arguments(parser):
 
 	# teacher forcing / attention forcing / dual
 	parser.add_argument('--train_mode', type=str, default='dual', help='train mode; multi | dual | afdynamic')
-	parser.add_argument('--load_tf', type=str, default=None, help='used with train_mode=af; tf model load dir')
+	parser.add_argument('--load_tf', type=none_or_str, default=None, help='used with train_mode=af; tf model load dir')
 	parser.add_argument('--teacher_forcing_ratio', type=float, default=1.0, help='ratio of teacher forcing')
 	parser.add_argument('--attention_forcing', type=str, default='False', help='whether or not using attention forcing')
 	parser.add_argument('--attention_loss_coeff', type=float, default=1.0, \
@@ -100,7 +103,7 @@ def load_arguments(parser):
 	parser.add_argument('--ep_aaf_start', type=int, default=10, help='AAF starts at this epoch')
 	parser.add_argument('--nb_fr_tokens_max', type=int, default=30, help='max nb of free running tokens')
 
-
+	parser.add_argument('--use_type', type=str, default='word', help='word or char')
 	
 	# save and print
 	parser.add_argument('--checkpoint_every', type=int, default=10, help='save ckpt every n steps')	
@@ -667,8 +670,14 @@ class Trainer_aaf_base(Trainer):
 			teacher_forcing_ratio = self.teacher_forcing_ratio
 		else:
 			progress = 1.0 * step / total_steps
+			ss_max = 0.2 # 0.2 0.1
+
 			# linear schedule
-			teacher_forcing_ratio = 1.0 - progress 
+			teacher_forcing_ratio = 1.0 - ss_max * progress
+
+			# Inverse sigmoid decay
+			# ss_k = 10 # 5
+			# teacher_forcing_ratio = 1.0 -ss_max + ss_max * (ss_k / (ss_k + np.exp(progress * 100 / ss_k)))
 
 		# get padding mask
 		non_padding_mask_src = src_ids.data.ne(PAD)
@@ -775,7 +784,8 @@ class Trainer_aaf_base(Trainer):
 		# print(resloss, resklloss, klloss.get_fr_percent())
 		# import pdb; pdb.set_trace()
 		# input('...')
-		self._update_dct_info(step, resloss, resklloss)
+		fr_percent = 1.0 - teacher_forcing_ratio
+		self._update_dct_info(step, resloss, resklloss, fr_percent)
 
 		return resloss, resklloss
 
@@ -788,6 +798,33 @@ class Trainer_aaf_base(Trainer):
 			dirFile = os.path.join(self.expt_dir,'dct_info.pkl')
 			with open(dirFile,'wb') as f:
 				pickle.dump(self.dct_info, f, protocol=2)
+
+	def _print_seqs(self, model, step, src_ids, tgt_ids, ret_dict, ret_dict_fr=None):
+		def _pure_txt(lst, lst_rm=['<s>', '</s>', '<pad>']):
+			return [l for l in lst if l not in lst_rm]
+
+		# Print out intermediate results
+		flag_print_inter = True
+		if step % self.checkpoint_every == 0 and flag_print_inter:
+			# convert to words
+			srcwords = _convert_to_words_batchfirst(src_ids, model.id2word_enc)
+			refwords = _convert_to_words_batchfirst(tgt_ids[:,1:], model.id2word_dec)			
+			seqwords = _convert_to_words(ret_dict['sequence'], model.id2word_dec)
+			if ret_dict_fr is not None: seqwords_fr = _convert_to_words(ret_dict_fr['sequence'], model.id2word_dec)
+
+			print('---step_res---')
+			for i in range(1):
+				outsrc = 'SRC: {}\n'.format(' '.join(_pure_txt(srcwords[i]))).encode('utf-8')
+				outref = 'REF: {}\n'.format(' '.join(_pure_txt(refwords[i]))).encode('utf-8')
+				outline = 'OUT: {}\n'.format(' '.join(_pure_txt(seqwords[i]))).encode('utf-8')
+				sys.stdout.buffer.write(outsrc)
+				sys.stdout.buffer.write(outref)
+				sys.stdout.buffer.write(outline)
+				if ret_dict_fr is not None:
+					sys.stdout.buffer.write('OUT_FR: {}\n'.format(' '.join(_pure_txt(seqwords_fr[i]))).encode('utf-8'))
+			print('----------------')
+			# input('...')
+			sys.stdout.flush()
 
 	def train(self, train_set, model, **kwargs):
 		if self.load_tf_dir is not None:
@@ -871,6 +908,11 @@ class Trainer_aaf(Trainer_aaf_base):
 												teacher_forcing_ratio=0.0,
 												att_key_feats=src_probs, att_scores=attscores)
 
+		# import pdb; pdb.set_trace()
+		# decoder_outputs = torch.stack(decoder_outputs, dim=2)
+		# print(tgt_ids.size(), tgt_ids[0])
+		# print(decoder_outputs.size(), decoder_outputs[0])
+
 		# print('aaf')
 		# # print(len(decoder_outputs))	# max_seq_len - 1
 
@@ -890,6 +932,11 @@ class Trainer_aaf(Trainer_aaf_base):
 		attn_ref_fr = ret_dict_fr['attention_ref']
 
 		# import pdb; pdb.set_trace()
+		# attn_ref = torch.cat(attn_ref,dim=1)
+		# attn_hyp = torch.cat(attn_hyp,dim=1)
+		# print(attn_ref.size(), attn_ref[0])
+		# print(attn_hyp.size(), attn_hyp[0])
+		# pdb.set_trace()
 		# print(non_padding_mask_tgt.size())
 
 		# TODO: rm the (non-)stack option
@@ -1562,6 +1609,580 @@ class Trainer_paf(Trainer_aaf_base):
 			log.info('\n')
 			log.info(log_msg)
 
+
+class Trainer_oaf_v0_nosched(Trainer_aaf_base):
+	def __init__(self, **kwargs):
+		super(Trainer_oaf, self).__init__(**kwargs)
+		self.dct_info = {'nll':[], 'nll_fr':[], 'kl':[], 'fr_percent':[]}
+
+	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None):
+		"""
+			Args:
+				src_ids 		=     w1 w2 w3 </s> <pad> <pad> <pad>
+				tgt_ids 		= <s> w1 w2 w3 </s> <pad> <pad> <pad>
+			(optional)
+				src_probs 		=     p1 p2 p3 0    0     ...
+				attscores 		n * [31*32] numpy array 
+			Others:
+				internal input 	= <s> w1 w2 w3 </s> <pad> <pad>
+				decoder_outputs	= 	  w1 w2 w3 </s> <pad> <pad> <pad>
+		"""
+
+		# define loss
+		loss = self.loss
+		klloss = KLDivLoss()
+		nll_fr = NLLLoss()
+
+		# scheduled sampling
+		if not self.scheduled_sampling:
+			teacher_forcing_ratio = self.teacher_forcing_ratio
+		else:
+			progress = 1.0 * step / total_steps
+			# linear schedule
+			teacher_forcing_ratio = 1.0 - progress 
+
+		# get padding mask
+		non_padding_mask_src = src_ids.data.ne(PAD)
+		non_padding_mask_tgt = tgt_ids.data.ne(PAD)
+
+		# Forward propagation
+		# NB: flag_stack_outputs==True
+		# get 2 versions: tf model always uses ref history, af model uses tf-gen history
+		model.attention_forcing = False
+		decoder_outputs, decoder_hidden, ret_dict = model(src_ids, tgt_ids, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs)
+		decoder_outputs = torch.stack(decoder_outputs, dim=2)
+		# import pdb; pdb.set_trace()
+		decoder_samples = torch.cat(ret_dict['sequence'], dim=1)
+		decoder_samples = torch.cat([tgt_ids[:,0:1], decoder_samples], dim=1)
+		# print(decoder_samples.size(), decoder_samples[:5,:10])
+		# print(tgt_ids.size(), tgt_ids[:5,:10])
+		# pdb.set_trace()
+		attn_hyp = torch.cat(ret_dict['attention_score'], dim=1)
+
+		model.attention_forcing = True
+		decoder_outputs_fr, decoder_hidden_fr, ret_dict_fr = model(src_ids, decoder_samples, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs, att_scores=attn_hyp.detach())
+		decoder_outputs_fr = torch.stack(decoder_outputs_fr, dim=2)
+		attn_hyp_fr = torch.cat(ret_dict_fr['attention_score'], dim=1)
+
+		# Print out intermediate results
+		# code removed for concise log
+
+		# Get loss 
+		# 2 versions, use both
+		loss.reset()
+		if not self.eval_with_mask:
+			loss.eval_batch_seq(decoder_outputs, 
+				tgt_ids[:, 1:])
+			nll_fr.eval_batch_seq(decoder_outputs_fr, 
+				tgt_ids[:, 1:])
+		else:
+			# .contiguous() is for safety / consistency
+			loss.eval_batch_seq_with_mask(decoder_outputs, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+			nll_fr.eval_batch_seq_with_mask(decoder_outputs_fr, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+		
+		# Get KL loss
+		assert self.attention_loss_coeff > 0, 'self.attention_loss_coeff > 0 required, but got {}'.format(self.attention_loss_coeff)
+		klloss.eval_batch_seq_with_mask(attn_hyp_fr, 
+										attn_hyp.detach(), 
+										non_padding_mask_tgt[:, 1:]
+										)
+
+		# add coeff
+		klloss.mul(self.attention_loss_coeff)
+
+		# addition
+		# total_loss = loss.add(klloss)
+		total_loss = loss.acc_loss + (nll_fr.acc_loss + klloss.acc_loss)
+
+		# Backward propagation
+		model.zero_grad()
+		total_loss.backward()
+		self.optimizer.step()
+
+		resloss = loss.get_loss()
+		resloss_fr = nll_fr.get_loss()
+		resklloss = klloss.get_loss()
+		fr_percent = 1.0 - teacher_forcing_ratio
+		# print(resloss, resklloss, fr_percent)
+
+		self._update_dct_info(step, resloss, resloss_fr, resklloss, fr_percent)
+		self._print_seqs(model, step, src_ids, tgt_ids, ret_dict, ret_dict_fr=ret_dict_fr)
+
+		return resloss, resklloss
+
+	def _update_dct_info(self, step, resloss, resloss_fr, resklloss, fr_percent=-1.0):
+		self.dct_info['nll'].append(resloss)
+		self.dct_info['nll_fr'].append(resloss_fr)
+		self.dct_info['kl'].append(resklloss)
+		self.dct_info['fr_percent'].append(fr_percent)
+		flag_print_inter = True
+		if step % self.checkpoint_every == 0 and flag_print_inter:
+			dirFile = os.path.join(self.expt_dir,'dct_info.pkl')
+			with open(dirFile,'wb') as f:
+				pickle.dump(self.dct_info, f, protocol=2)
+
+class Trainer_oaf_v1_notf(Trainer_aaf_base):
+	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None):
+		"""
+			Args:
+				src_ids 		=     w1 w2 w3 </s> <pad> <pad> <pad>
+				tgt_ids 		= <s> w1 w2 w3 </s> <pad> <pad> <pad>
+			(optional)
+				src_probs 		=     p1 p2 p3 0    0     ...
+				attscores 		n * [31*32] numpy array 
+			Others:
+				internal input 	= <s> w1 w2 w3 </s> <pad> <pad>
+				decoder_outputs	= 	  w1 w2 w3 </s> <pad> <pad> <pad>
+		"""
+
+		# define loss
+		loss = self.loss
+		klloss = KLDivLoss()
+
+		# scheduled sampling
+		if not self.scheduled_sampling:
+			teacher_forcing_ratio = self.teacher_forcing_ratio
+		else:
+			progress = 1.0 * step / total_steps
+			# linear schedule
+			teacher_forcing_ratio = 1.0 - progress 
+
+		# get padding mask
+		non_padding_mask_src = src_ids.data.ne(PAD)
+		non_padding_mask_tgt = tgt_ids.data.ne(PAD)
+
+		# Forward propagation
+		# NB: flag_stack_outputs==True
+		# get 2 versions: tf model always uses ref history, af model uses tf-gen history
+		model.attention_forcing = False
+		with torch.no_grad():
+			decoder_outputs, decoder_hidden, ret_dict = model(src_ids, tgt_ids, 
+													is_training=True, 
+													teacher_forcing_ratio=1.0,
+													att_key_feats=src_probs)
+		decoder_outputs = torch.stack(decoder_outputs, dim=2)
+		decoder_samples = torch.cat(ret_dict['sequence'], dim=1)
+		decoder_samples = torch.cat([tgt_ids[:,0:1], decoder_samples], dim=1)
+		attn_hyp = torch.cat(ret_dict['attention_score'], dim=1)
+
+		model.attention_forcing = True
+		decoder_outputs_fr, decoder_hidden_fr, ret_dict_fr = model(src_ids, decoder_samples, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs, att_scores=attn_hyp.detach())
+		decoder_outputs_fr = torch.stack(decoder_outputs_fr, dim=2)
+		attn_hyp_fr = torch.cat(ret_dict_fr['attention_score'], dim=1)
+
+		# Print out intermediate results
+		# code removed for concise log
+
+		# Get loss 
+		# 2 versions, use both
+		loss.reset()
+		if not self.eval_with_mask:
+			# loss.eval_batch_seq(decoder_outputs, 
+			# 	tgt_ids[:, 1:])
+			loss.eval_batch_seq(decoder_outputs_fr, 
+				tgt_ids[:, 1:])
+		else:
+			# loss.eval_batch_seq_with_mask(decoder_outputs, 
+			# 	tgt_ids[:, 1:], 
+			# 	non_padding_mask_tgt[:, 1:])
+			loss.eval_batch_seq_with_mask(decoder_outputs_fr, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+		# loss.acc_loss *= 0.5
+		
+		# Get KL loss
+		assert self.attention_loss_coeff > 0, 'self.attention_loss_coeff > 0 required, but got {}'.format(self.attention_loss_coeff)
+		klloss.eval_batch_seq_with_mask(attn_hyp_fr, 
+										attn_hyp.detach(), 
+										non_padding_mask_tgt[:, 1:]
+										)
+
+		# add coeff
+		klloss.mul(self.attention_loss_coeff)
+
+		# addition
+		total_loss = loss.add(klloss)
+
+		# Backward propagation
+		model.zero_grad()
+		total_loss.backward()
+		self.optimizer.step()
+
+		resloss = loss.get_loss()
+		resklloss = klloss.get_loss()
+		fr_percent = 1.0 - teacher_forcing_ratio
+		# print(resloss, resklloss, fr_percent)
+
+		self._update_dct_info(step, resloss, resklloss, fr_percent)
+
+		return resloss, resklloss
+
+class Trainer_oaf(Trainer_aaf_base):
+	def __init__(self, **kwargs):
+		super(Trainer_oaf, self).__init__(**kwargs)
+		self.dct_info = {'nll':[], 'nll_fr':[], 'kl':[], 'fr_percent':[]}
+
+	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None):
+		"""
+			Args:
+				src_ids 		=     w1 w2 w3 </s> <pad> <pad> <pad>
+				tgt_ids 		= <s> w1 w2 w3 </s> <pad> <pad> <pad>
+			(optional)
+				src_probs 		=     p1 p2 p3 0    0     ...
+				attscores 		n * [31*32] numpy array 
+			Others:
+				internal input 	= <s> w1 w2 w3 </s> <pad> <pad>
+				decoder_outputs	= 	  w1 w2 w3 </s> <pad> <pad> <pad>
+		"""
+
+		# define loss
+		loss = self.loss
+		klloss = KLDivLoss()
+		nll_fr = NLLLoss()
+
+		# scheduled sampling
+		if not self.scheduled_sampling:
+			teacher_forcing_ratio = self.teacher_forcing_ratio
+		else:
+			progress = 1.0 * step / total_steps
+			# fixed
+			teacher_forcing_ratio = 0.5
+			# linear schedule
+			# teacher_forcing_ratio = 1.0 - progress 
+
+		# get padding mask
+		non_padding_mask_src = src_ids.data.ne(PAD)
+		non_padding_mask_tgt = tgt_ids.data.ne(PAD)
+
+		# Forward propagation
+		# NB: flag_stack_outputs==True
+		# get 2 versions: tf model always uses ref history, af model uses tf-gen history
+		model.attention_forcing = False
+		decoder_outputs, decoder_hidden, ret_dict = model(src_ids, tgt_ids, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs)
+		decoder_outputs = torch.stack(decoder_outputs, dim=2)
+		# import pdb; pdb.set_trace()
+		decoder_samples = torch.cat(ret_dict['sequence'], dim=1)
+		decoder_samples = torch.cat([tgt_ids[:,0:1], decoder_samples], dim=1)
+		# print(decoder_samples.size(), decoder_samples[:5,:10])
+		# print(tgt_ids.size(), tgt_ids[:5,:10])
+		# pdb.set_trace()
+		attn_hyp = torch.cat(ret_dict['attention_score'], dim=1)
+
+		model.attention_forcing = True
+		decoder_outputs_fr, decoder_hidden_fr, ret_dict_fr = model(src_ids, decoder_samples, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs, att_scores=attn_hyp.detach())
+		decoder_outputs_fr = torch.stack(decoder_outputs_fr, dim=2)
+		attn_hyp_fr = torch.cat(ret_dict_fr['attention_score'], dim=1)
+
+		# Print out intermediate results
+		# code removed for concise log
+
+		# Get loss 
+		# 2 versions, use both
+		loss.reset()
+		if not self.eval_with_mask:
+			loss.eval_batch_seq(decoder_outputs, 
+				tgt_ids[:, 1:])
+			nll_fr.eval_batch_seq(decoder_outputs_fr, 
+				tgt_ids[:, 1:])
+		else:
+			# .contiguous() is for safety / consistency
+			loss.eval_batch_seq_with_mask(decoder_outputs, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+			nll_fr.eval_batch_seq_with_mask(decoder_outputs_fr, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+		# nll_fr.mul(1.0 - teacher_forcing_ratio)
+		
+		# Get KL loss
+		assert self.attention_loss_coeff > 0, 'self.attention_loss_coeff > 0 required, but got {}'.format(self.attention_loss_coeff)
+		klloss.eval_batch_seq_with_mask(attn_hyp_fr, 
+										attn_hyp.detach(), 
+										non_padding_mask_tgt[:, 1:]
+										)
+
+		# add coeff
+		klloss.mul(self.attention_loss_coeff)
+
+		# addition
+		# total_loss = loss.add(klloss)
+
+		# oaf loss
+		fr_percent = 1.0 - teacher_forcing_ratio
+		total_loss = (1.0 - fr_percent) * loss.acc_loss + fr_percent * (nll_fr.acc_loss + klloss.acc_loss)
+
+		# Backward propagation
+		model.zero_grad()
+		total_loss.backward()
+		self.optimizer.step()
+
+		resloss = loss.get_loss()
+		resloss_fr = nll_fr.get_loss()
+		resklloss = klloss.get_loss()
+		
+		# print(resloss, resklloss, fr_percent)
+
+		self._update_dct_info(step, resloss, resloss_fr, resklloss, fr_percent)
+		self._print_seqs(model, step, src_ids, tgt_ids, ret_dict, ret_dict_fr=ret_dict_fr)
+
+		return resloss, resklloss
+
+	def _update_dct_info(self, step, resloss, resloss_fr, resklloss, fr_percent=-1.0):
+		self.dct_info['nll'].append(resloss)
+		self.dct_info['nll_fr'].append(resloss_fr)
+		self.dct_info['kl'].append(resklloss)
+		self.dct_info['fr_percent'].append(fr_percent)
+		flag_print_inter = True
+		if step % self.checkpoint_every == 0 and flag_print_inter:
+			dirFile = os.path.join(self.expt_dir,'dct_info.pkl')
+			with open(dirFile,'wb') as f:
+				pickle.dump(self.dct_info, f, protocol=2)
+
+class Trainer_oaf_alwaysKL(Trainer_oaf):
+	"""
+	always use the alignment loss KL(alpha||alpha')
+	"""
+	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None):
+		"""
+			Args:
+				src_ids 		=     w1 w2 w3 </s> <pad> <pad> <pad>
+				tgt_ids 		= <s> w1 w2 w3 </s> <pad> <pad> <pad>
+			(optional)
+				src_probs 		=     p1 p2 p3 0    0     ...
+				attscores 		n * [31*32] numpy array 
+			Others:
+				internal input 	= <s> w1 w2 w3 </s> <pad> <pad>
+				decoder_outputs	= 	  w1 w2 w3 </s> <pad> <pad> <pad>
+		"""
+
+		# define loss
+		loss = self.loss
+		klloss = KLDivLoss()
+		nll_fr = NLLLoss()
+
+		# scheduled sampling
+		if not self.scheduled_sampling:
+			teacher_forcing_ratio = self.teacher_forcing_ratio
+		else:
+			progress = 1.0 * step / total_steps
+			# fixed
+			# teacher_forcing_ratio = 0.5
+			# linear schedule
+			teacher_forcing_ratio = 1.0 - progress 
+
+		# get padding mask
+		non_padding_mask_src = src_ids.data.ne(PAD)
+		non_padding_mask_tgt = tgt_ids.data.ne(PAD)
+
+		# Forward propagation
+		# NB: flag_stack_outputs==True
+		# get 2 versions: tf model always uses ref history, af model uses tf-gen history
+		model.attention_forcing = False
+		decoder_outputs, decoder_hidden, ret_dict = model(src_ids, tgt_ids, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs)
+		decoder_outputs = torch.stack(decoder_outputs, dim=2)
+		# import pdb; pdb.set_trace()
+		decoder_samples = torch.cat(ret_dict['sequence'], dim=1)
+		decoder_samples = torch.cat([tgt_ids[:,0:1], decoder_samples], dim=1)
+		# print(decoder_samples.size(), decoder_samples[:5,:10])
+		# print(tgt_ids.size(), tgt_ids[:5,:10])
+		# pdb.set_trace()
+		attn_hyp = torch.cat(ret_dict['attention_score'], dim=1)
+
+		model.attention_forcing = True
+		decoder_outputs_fr, decoder_hidden_fr, ret_dict_fr = model(src_ids, decoder_samples, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs, att_scores=attn_hyp.detach())
+		decoder_outputs_fr = torch.stack(decoder_outputs_fr, dim=2)
+		attn_hyp_fr = torch.cat(ret_dict_fr['attention_score'], dim=1)
+
+		# Print out intermediate results
+		# code removed for concise log
+
+		# Get loss 
+		# 2 versions, use both
+		loss.reset()
+		if not self.eval_with_mask:
+			loss.eval_batch_seq(decoder_outputs, 
+				tgt_ids[:, 1:])
+			nll_fr.eval_batch_seq(decoder_outputs_fr, 
+				tgt_ids[:, 1:])
+		else:
+			# .contiguous() is for safety / consistency
+			loss.eval_batch_seq_with_mask(decoder_outputs, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+			nll_fr.eval_batch_seq_with_mask(decoder_outputs_fr, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+		# nll_fr.mul(1.0 - teacher_forcing_ratio)
+		
+		# Get KL loss
+		assert self.attention_loss_coeff > 0, 'self.attention_loss_coeff > 0 required, but got {}'.format(self.attention_loss_coeff)
+		klloss.eval_batch_seq_with_mask(attn_hyp_fr, 
+										attn_hyp.detach(), 
+										non_padding_mask_tgt[:, 1:]
+										)
+
+		# add coeff
+		klloss.mul(self.attention_loss_coeff)
+
+		# addition
+		# total_loss = loss.add(klloss)
+
+		# oaf loss
+		fr_percent = 1.0 - teacher_forcing_ratio
+		total_loss = (1.0 - fr_percent) * loss.acc_loss + fr_percent * nll_fr.acc_loss + klloss.acc_loss
+
+		# Backward propagation
+		model.zero_grad()
+		total_loss.backward()
+		self.optimizer.step()
+
+		resloss = loss.get_loss()
+		resloss_fr = nll_fr.get_loss()
+		resklloss = klloss.get_loss()
+		
+		# print(resloss, resklloss, fr_percent)
+
+		self._update_dct_info(step, resloss, resloss_fr, resklloss, fr_percent)
+		self._print_seqs(model, step, src_ids, tgt_ids, ret_dict, ret_dict_fr=ret_dict_fr)
+
+		return resloss, resklloss
+
+class Trainer_oaf_noKL(Trainer_oaf):
+	"""
+	never use the alignment loss KL(alpha||alpha'), equivalent to oracle SS
+	"""
+	def _train_batch(self, src_ids, tgt_ids, model, step, total_steps, src_probs=None, attscores=None):
+		"""
+			Args:
+				src_ids 		=     w1 w2 w3 </s> <pad> <pad> <pad>
+				tgt_ids 		= <s> w1 w2 w3 </s> <pad> <pad> <pad>
+			(optional)
+				src_probs 		=     p1 p2 p3 0    0     ...
+				attscores 		n * [31*32] numpy array 
+			Others:
+				internal input 	= <s> w1 w2 w3 </s> <pad> <pad>
+				decoder_outputs	= 	  w1 w2 w3 </s> <pad> <pad> <pad>
+		"""
+
+		# define loss
+		loss = self.loss
+		klloss = KLDivLoss()
+		nll_fr = NLLLoss()
+
+		# scheduled sampling
+		if not self.scheduled_sampling:
+			teacher_forcing_ratio = self.teacher_forcing_ratio
+		else:
+			progress = 1.0 * step / total_steps
+			# fixed
+			# teacher_forcing_ratio = 0.5
+			# linear schedule
+			teacher_forcing_ratio = 1.0 - progress 
+
+		# get padding mask
+		non_padding_mask_src = src_ids.data.ne(PAD)
+		non_padding_mask_tgt = tgt_ids.data.ne(PAD)
+
+		# Forward propagation
+		# NB: flag_stack_outputs==True
+		# get 2 versions: tf model always uses ref history, af model uses tf-gen history
+		model.attention_forcing = False
+		decoder_outputs, decoder_hidden, ret_dict = model(src_ids, tgt_ids, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs)
+		decoder_outputs = torch.stack(decoder_outputs, dim=2)
+		decoder_samples = torch.cat(ret_dict['sequence'], dim=1)
+		decoder_samples = torch.cat([tgt_ids[:,0:1], decoder_samples], dim=1)
+		# attn_hyp = torch.cat(ret_dict['attention_score'], dim=1)
+
+		# model.attention_forcing = True
+		decoder_outputs_fr, decoder_hidden_fr, ret_dict_fr = model(src_ids, decoder_samples, 
+												is_training=True, 
+												teacher_forcing_ratio=1.0,
+												att_key_feats=src_probs)
+												# att_key_feats=src_probs, att_scores=attn_hyp.detach())
+
+		decoder_outputs_fr = torch.stack(decoder_outputs_fr, dim=2)
+		# attn_hyp_fr = torch.cat(ret_dict_fr['attention_score'], dim=1)
+
+		# Print out intermediate results
+		# code removed for concise log
+
+		# Get loss 
+		# 2 versions, use both
+		loss.reset()
+		if not self.eval_with_mask:
+			loss.eval_batch_seq(decoder_outputs, 
+				tgt_ids[:, 1:])
+			nll_fr.eval_batch_seq(decoder_outputs_fr, 
+				tgt_ids[:, 1:])
+		else:
+			# .contiguous() is for safety / consistency
+			loss.eval_batch_seq_with_mask(decoder_outputs, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+			nll_fr.eval_batch_seq_with_mask(decoder_outputs_fr, 
+				tgt_ids[:, 1:], 
+				non_padding_mask_tgt[:, 1:])
+		# nll_fr.mul(1.0 - teacher_forcing_ratio)
+		
+		# # Get KL loss
+		# assert self.attention_loss_coeff > 0, 'self.attention_loss_coeff > 0 required, but got {}'.format(self.attention_loss_coeff)
+		# klloss.eval_batch_seq_with_mask(attn_hyp_fr, 
+		# 								attn_hyp.detach(), 
+		# 								non_padding_mask_tgt[:, 1:]
+		# 								)
+
+		# # add coeff
+		# klloss.mul(self.attention_loss_coeff)
+
+		# addition
+		# total_loss = loss.add(klloss)
+
+		# oaf loss
+		fr_percent = 1.0 - teacher_forcing_ratio
+		total_loss = (1.0 - fr_percent) * loss.acc_loss + fr_percent * nll_fr.acc_loss
+
+		# Backward propagation
+		model.zero_grad()
+		total_loss.backward()
+		self.optimizer.step()
+
+		resloss = loss.get_loss()
+		resloss_fr = nll_fr.get_loss()
+		resklloss = klloss.get_loss()
+		
+		# print(resloss, resklloss, fr_percent)
+		self._update_dct_info(step, resloss, resloss_fr, resklloss, fr_percent)
+		self._print_seqs(model, step, src_ids, tgt_ids, ret_dict, ret_dict_fr=ret_dict_fr)
+
+		return resloss, resklloss	
 
 
 
@@ -2833,7 +3454,7 @@ def main():
 						path_vocab_src, path_vocab_tgt,
 						attscore_path=train_attscore_path,
 						max_seq_len=config['max_seq_len'], batch_size=config['batch_size'],
-						use_gpu=config['use_gpu'])
+						use_gpu=config['use_gpu'], use_type=config['use_type'])
 
 	vocab_size_enc = len(train_set.vocab_src)
 	vocab_size_dec = len(train_set.vocab_tgt)
@@ -3087,6 +3708,69 @@ def main():
 						use_gpu=config['use_gpu'],
 						max_grad_norm=config['max_grad_norm'],
 						nb_fr_tokens_max=config['nb_fr_tokens_max']
+						)
+
+		# run training
+		seq2seq_dd = t.train(train_set, seq2seq_dd, num_epochs=config['num_epochs'], resume=resume, dev_set=dev_set)
+
+	if config['train_mode'] in ['oaf', 'oaf_alwaysKL', 'oaf_noKL']:
+		""" train either tf or af model """
+
+		# make consistent
+		if config['attention_forcing'] == False:
+			config['attention_loss_coeff'] = 0.0
+
+		# construct model
+		seq2seq_dd = Seq2Seq_DD(vocab_size_enc, vocab_size_dec,
+								embedding_size_enc=config['embedding_size_enc'],
+								embedding_size_dec=config['embedding_size_dec'],
+								embedding_dropout_rate=config['embedding_dropout'],
+								hidden_size_enc=config['hidden_size_enc'],
+								num_bilstm_enc=config['num_bilstm_enc'],
+								num_unilstm_enc=config['num_unilstm_enc'],
+								hidden_size_dec=config['hidden_size_dec'],
+								num_unilstm_dec=config['num_unilstm_dec'],
+								hidden_size_att=config['hidden_size_att'],
+								hidden_size_shared=config['hidden_size_shared'],
+								dropout_rate=config['dropout'],
+								residual=config['residual'],
+								batch_first=config['batch_first'],
+								max_seq_len=config['max_seq_len'],
+								batch_size=config['batch_size'],
+								load_embedding_src=config['load_embedding_src'],
+								load_embedding_tgt=config['load_embedding_tgt'],
+								src_word2id=train_set.src_word2id,
+								tgt_word2id=train_set.tgt_word2id,
+								src_id2word=train_set.src_id2word,
+								tgt_id2word=train_set.tgt_id2word,
+								att_mode=config['att_mode'],
+								hard_att=config['hard_att'],
+								use_gpu=config['use_gpu'],
+								additional_key_size=config['additional_key_size'],
+								attention_forcing=config['attention_forcing'],
+								flag_stack_outputs=False).to(device)
+
+		# contruct trainer
+		def get_trainer(*args, **kwargs):
+			dct_tmp = {'oaf':Trainer_oaf, 'oaf_alwaysKL':Trainer_oaf_alwaysKL, 'oaf_noKL':Trainer_oaf_noKL}
+			return dct_tmp[config['train_mode']](*args, **kwargs)
+
+		# t = Trainer_oaf(expt_dir=config['save'], 
+		t = get_trainer(expt_dir=config['save'], 
+						load_dir=config['load'],
+						load_tf_dir=config['load_tf'],
+						batch_size=config['batch_size'],
+						random_seed=config['random_seed'],
+						checkpoint_every=config['checkpoint_every'],
+						print_every=config['print_every'],
+						learning_rate=config['learning_rate'],
+						eval_with_mask=config['eval_with_mask'],
+						scheduled_sampling=config['scheduled_sampling'],
+						teacher_forcing_ratio=config['teacher_forcing_ratio'],
+						attention_loss_coeff=config['attention_loss_coeff'],
+						attention_forcing=config['attention_forcing'],
+						use_gpu=config['use_gpu'],
+						max_grad_norm=config['max_grad_norm']
 						)
 
 		# run training

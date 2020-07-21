@@ -1,6 +1,7 @@
 #!/bin/bash
 #$ -S /bin/bash
 
+# ------------------------ ENV --------------------------
 unset LD_PRELOAD # when run on the stack it has /usr/local/grid/agile/admin/cudadevice.so which will give core dumped
 export PATH=/home/mifs/ytl28/anaconda3/bin/:$PATH
 # export PATH=/home/mifs/ytl28/anaconda3/bin/:/home/mifs/ytl28/anaconda/bin:/home/mifs/ytl28/local/bin:/home/mifs/ytl28/anaconda3/condabin:\
@@ -35,37 +36,104 @@ cd $EXP_DIR
 export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
-MODE=translate # train translate
+# ------------------------ CONFIG --------------------------
+# ------------------------ data --------------------------
+task=enfr # enfr ende
+testset_fr=tst2013 # tst2013 tst2014
+testset_de=tst-COMMON # tst2013 tst2014
+
+### parse config
+case $task in
+"enfr")
+  use_type=word
+  train_path_src=af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.en
+  train_path_tgt=af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.fr
+  path_vocab_src=af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en
+  path_vocab_tgt=af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr
+
+  testset=$testset_fr
+  case $testset in
+  "tst2014")
+    prefix=en-fr-2015
+    event=IWSLT16
+    ;;
+  "tst2013")
+    prefix=iwslt15-enfr
+    event=IWSLT15
+    ;;
+  esac
+  test_path_src=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.en
+  test_path_tgt=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
+  ;;
+"ende")
+  use_type=char
+  train_path_src=af-lib/mustc-en-de/train/train.BPE.en
+  train_path_tgt=af-lib/mustc-en-de/train/train.de
+  path_vocab_src=af-lib/mustc-en-de/vocab.en
+  path_vocab_tgt=af-lib/mustc-en-de/vocab.de.char.trim
+
+  testset=$testset_de
+  test_path_src=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.BPE.en
+  test_path_tgt=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.de
+  ;;
+esac
+
+# ------------------------ model & mode --------------------------
+MODE=train # train translate translate_smooth
+smooth_epochs_str=7_16_21 # 9_13_17
+
+### dir & task-specific setting
+case $task in
+"enfr")
+  SAVE_DIR_BASE=results/models-v9enfr
+  load_tf=results/models-v9enfr/aaf-v0002-tf-bs50-v2/checkpoints_epoch/17
+  train_attscore_path=af-models/tf/trainset/epoch_24/att_score.npy
+  # max_seq_len=64
+  if [ "$MODE" == "train" ]; then
+    max_seq_len=64
+  else
+    max_seq_len=200
+  fi
+  ;;
+"ende")
+  SAVE_DIR_BASE=results/models-v0ende
+  load_tf=None
+  if [ "$MODE" == "train" ]; then
+    max_seq_len=300
+  else
+    max_seq_len=900
+  fi
+  ;;
+esac
+
+### training
+learning_rate=0.002 # 0.002 0.001
+
+### saving
 # SAVE_DIR=results/models-v9enfr/aaf-v0002-tf/
-
-SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-v2/
-# echo batch_size is 50, not 128, for comparison with AF!!!
-
-# SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-asup/
+# SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-v2/
+# SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain/
+# SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-asup/
+# SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr${learning_rate}/
+echo batch_size is 50, not 128, for comparison with AF!!!
+SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-asup/
 # SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-checkRunAway/
-# TRANSLATE_EPOCH=30
+
+# SAVE_DIR=${SAVE_DIR_BASE}/v0000-tf-lr${learning_rate}/
 
 
-# for translation
-# prefix=iwslt15-enfr
-# event=IWSLT15
-# testset=tst2013
-
-prefix=en-fr-2015
-event=IWSLT16
-testset=tst2014
-
-
+# ------------------------ RUN MODEL --------------------------
 case $MODE in
 "train")
     echo MODE: train
     # --dev_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.en \
     # --dev_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.fr \
-    CUDA_LAUNCH_BLOCKING=1 $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/train.py \
-      --train_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.en \
-      --train_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.fr \
-      --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
-      --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
+    # CUDA_LAUNCH_BLOCKING=1
+    $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/train.py \
+      --train_path_src $train_path_src \
+      --train_path_tgt $train_path_tgt \
+      --path_vocab_src $path_vocab_src \
+      --path_vocab_tgt $path_vocab_tgt \
       --random_seed 16 \
       --embedding_size_enc 200 \
       --embedding_size_dec 200 \
@@ -80,13 +148,13 @@ case $MODE in
       --residual True \
       --hidden_size_shared 200 \
       --dropout 0.2 \
-      --max_seq_len 64 \
+      --max_seq_len $max_seq_len \
       --batch_size 50 \
       --batch_first True \
       --eval_with_mask False \
       --scheduled_sampling False \
       --embedding_dropout 0.0 \
-      --learning_rate 0.002 \
+      --learning_rate $learning_rate \
       --max_grad_norm 1.0 \
       --use_gpu True \
       --checkpoint_every 500 \
@@ -96,46 +164,71 @@ case $MODE in
       --teacher_forcing_ratio 1.0 \
       --attention_forcing False \
       --attention_loss_coeff 0.0 \
+      --use_type $use_type \
       --save $SAVE_DIR \
-      --train_attscore_path af-models/tf/trainset/epoch_24/att_score.npy \
+      --load_tf $load_tf \
       2>&1 | tee ${EXP_DIR}/${SAVE_DIR}log.txt
-      # --num_epochs 50 \
-      # --train_attscore_path lib/attscores/iwslt.enfr.tfv0001.npy \
-
-      # --load_tf af-models/tf/checkpoints_epoch/24 \
-
-      # bahdanau / hybrid
-      # --train_path_src lib/iwslt15-ytl/train.en \
-      # --train_path_tgt lib/iwslt15-ytl/train.vi \
-      # --path_vocab_src lib/iwslt15-ytl/vocab.en \
-      # --path_vocab_tgt lib/iwslt15-ytl/vocab.vi \
-      # --dev_path_src lib/iwslt15-ytl/tst2012.en \
-      # --dev_path_tgt lib/iwslt15-ytl/tst2012.vi \
     ;;
 "translate")
 trap "exit" INT
 for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/*; do
     TRANSLATE_EPOCH=$(basename $f)
-    test_path_src=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.en
-    test_path_tgt=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
     test_path_out=${SAVE_DIR}${testset}/epoch_${TRANSLATE_EPOCH}/
     if [ ! -f "${test_path_out}translate.txt" ]; then
     echo MODE: translate, save to $test_path_out
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
         --test_path_src $test_path_src \
         --test_path_tgt $test_path_tgt \
-        --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
-        --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
+        --path_vocab_src $path_vocab_src \
+        --path_vocab_tgt $path_vocab_tgt \
         --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
         --test_path_out $test_path_out \
-        --max_seq_len 200 \
-        --batch_size 64 \
+        --max_seq_len $max_seq_len \
+        --batch_size 50 \
         --use_gpu True \
-        --beam_width 1
+        --beam_width 1 \
+        --use_type $use_type
         # --use_teacher False \
         # --mode 2 \
         # --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy \
+    fi
 done
+    ;;
+"translate_smooth")
+    test_path_out=${SAVE_DIR}${testset}/epoch_smooth_${smooth_epochs_str}/
+    if [ ! -f "${test_path_out}translate.txt" ]; then
+    echo MODE: $MODE, save to $test_path_out
+    $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
+        --test_path_src $test_path_src \
+        --test_path_tgt $test_path_tgt \
+        --path_vocab_src $path_vocab_src \
+        --path_vocab_tgt $path_vocab_tgt \
+        --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
+        --test_path_out $test_path_out \
+        --max_seq_len $max_seq_len \
+        --batch_size 50 \
+        --use_gpu True \
+        --beam_width 1 \
+        --smooth_epochs_str $smooth_epochs_str \
+        --use_type $use_type
+    fi
+    ;;
+"gen_att")
+    test_path_out=${SAVE_DIR}trainset/epoch_${TRANSLATE_EPOCH}/
+    echo MODE: $MODE, save to $test_path_out
+    $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
+      --test_path_src $train_path_src \
+      --test_path_tgt $train_path_tgt \
+      --path_vocab_src $path_vocab_src \
+      --path_vocab_tgt $path_vocab_tgt \
+      --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
+      --test_path_out $test_path_out \
+      --max_seq_len $max_seq_len \
+      --batch_size 50 \
+      --use_gpu True \
+      --beam_width 1 \
+      --use_teacher True \
+      --mode 6 \
     ;;
 esac
 
