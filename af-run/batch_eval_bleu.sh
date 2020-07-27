@@ -27,7 +27,7 @@ BLEU_DETOK=$SCRIPTS/generic/multi-bleu-detok.perl
 
 # 1.1 select tgt language and testset
 LANGUAGE=fr # fr de
-testset_fr=tst2013 # tst2013 tst2014
+testset_fr=tst2014 # tst2013 tst2014
 testset_de=tst-COMMON
 
 case $LANGUAGE in
@@ -104,9 +104,14 @@ esac
 # indir=results/models-v9enfr/aaf-v0050-oaf-tf/${testset}
 # indir=results/models-v9enfr/aaf-v0050-oaf-sched/${testset}
 # indir=results/models-v9enfr/aaf-v0050-oaf-gamma50/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.6/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf1.0/${testset}
 # indir=results/models-v9enfr/aaf-v0050-oaf-tf0.5-alwaysKL/${testset}
-indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-noKL/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-noKL/${testset}
+indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysKLsmooth1.0/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.9-alwaysKLsmooth0.5/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysMSE20.0/${testset}
+
+# indir=results/models-v9enfr/aaf-v0050-aoaf-tf0.8-selectKL2.0/${testset}
 
 
 

@@ -80,7 +80,7 @@ esac
 
 # ------------------------ model & mode --------------------------
 MODE=translate # train translate translate_smooth
-# smooth_epochs_str= # 9_13_17 5_11_20 13_25_27
+smooth_epochs_str=9_11_13 # 9_13_17 5_11_20 13_25_27
 
 ### training
 learning_rate=0.001 # 0.002
@@ -109,8 +109,8 @@ case $task in
   ;;
 esac
 
-attention_loss_coeff=10.0 # 10.0 50.0
-teacher_forcing_ratio=0.6 # 1.0 0.8 0.5 0.2
+attention_loss_coeff=1.0 # 10.0 50.0 5.0 2.0 1.0 0.5
+teacher_forcing_ratio=0.8 # 1.0 0.8 0.5 0.2
 
 scheduled_sampling=False
 # SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf/
@@ -120,8 +120,11 @@ scheduled_sampling=False
 # SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-tf/
 # SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-gamma${attention_loss_coeff}/
 
-train_mode=oaf
-SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-tf${teacher_forcing_ratio}/
+# train_mode=oaf
+# SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-tf${teacher_forcing_ratio}/
+
+# train_mode=oaf_alwaysKLsmooth
+SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-tf${teacher_forcing_ratio}-alwaysKLsmooth${attention_loss_coeff}/
 
 # train_mode=oaf_alwaysKL
 # SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-tf${teacher_forcing_ratio}-alwaysKL/
@@ -219,7 +222,7 @@ done
         --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
         --test_path_out $test_path_out \
         --max_seq_len $max_seq_len \
-        --batch_size 100 \
+        --batch_size 50 \
         --use_gpu True \
         --beam_width 1 \
         --smooth_epochs_str $smooth_epochs_str \
