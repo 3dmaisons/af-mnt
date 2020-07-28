@@ -123,7 +123,7 @@ scheduled_sampling=False
 # train_mode=oaf
 # SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-tf${teacher_forcing_ratio}/
 
-# train_mode=oaf_alwaysKLsmooth
+train_mode=oaf_alwaysKLsmooth
 SAVE_DIR=${SAVE_DIR_BASE}/aaf-v0050-oaf-tf${teacher_forcing_ratio}-alwaysKLsmooth${attention_loss_coeff}/
 
 # train_mode=oaf_alwaysKL

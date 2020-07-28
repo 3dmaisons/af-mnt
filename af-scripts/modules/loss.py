@@ -383,9 +383,8 @@ class KLDivLoss(Loss):
 		# asup debug only
 		# import pdb;
 		# print(outputs.size(), target.size(), mask.size())
-		# print('out', outputs[0,0,:])
-		# print('tgt', target[0,0,:])
-		# pdb.set_trace()
+		# print('out', outputs[0,10,:])
+		# print('tgt', target[0,10,:])
 	
 		mask0 = mask.unsqueeze(2).repeat(1, 1, target.size(-1))
 		mask1 = target.gt(0)
@@ -406,7 +405,7 @@ class KLDivLoss(Loss):
 		else:
 			mask2 = outputs_fr.gt(0)
 			mask3 = (mask0 * mask1 * mask2).int().float().detach()
-			outputs_fr[outputs_fr==0] = eps
+			# outputs_fr[outputs_fr==0] = eps
 			loss_fr = (mask3 * self.criterion(torch.log(smooth(outputs_fr)), smooth(target))).sum(2)
 			loss_utt_fr = (loss_fr).sum(1)
 
@@ -417,7 +416,6 @@ class KLDivLoss(Loss):
 			self.acc_loss += ((1-self.mask_utt_fr) * loss_utt).sum()
 			self.acc_loss += (self.mask_utt_fr * loss_utt_fr).sum()
 
-			
 		if torch.isnan(self.acc_loss).any():
 			print('loss_utt', loss_utt)
 			if outputs_fr is not None: print('loss_utt_fr', loss_utt_fr)

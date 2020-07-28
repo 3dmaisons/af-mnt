@@ -941,13 +941,13 @@ class Trainer_aaf(Trainer_aaf_base):
 
 		# TODO: rm the (non-)stack option
 		if model.flag_stack_outputs:
-			klloss.eval_batch_seq_with_mask(attn_hyp, 
+			klloss.eval_batch_seq_with_mask_smooth(attn_hyp, 
 										attn_ref, 
 										non_padding_mask_tgt[:, 1:],
 										attn_hyp_fr,
 										epoch)
 		else:
-			klloss.eval_batch_seq_with_mask(torch.cat(attn_hyp,dim=1), 
+			klloss.eval_batch_seq_with_mask_smooth(torch.cat(attn_hyp,dim=1), 
 										torch.cat(attn_ref,dim=1), 
 										non_padding_mask_tgt[:, 1:],
 										torch.cat(attn_hyp_fr,dim=1),

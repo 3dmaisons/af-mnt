@@ -27,7 +27,7 @@ BLEU_DETOK=$SCRIPTS/generic/multi-bleu-detok.perl
 
 # 1.1 select tgt language and testset
 LANGUAGE=fr # fr de
-testset_fr=tst2014 # tst2013 tst2014
+testset_fr=tst2013 # tst2013 tst2014
 testset_de=tst-COMMON
 
 case $LANGUAGE in
@@ -83,7 +83,7 @@ esac
 	# indir=results/models-v9enfr/aaf-v0020-sched-log/${testset}
 	# indir=results/models-v9enfr/aaf-v0020-sched-fr15/${testset}
 	# indir=results/models-v9enfr/aaf-v0020-sched-fr0.0/${testset}
-	# indir=results/models-v9enfr/aaf-v0020-sched-fr2.0/${testset}
+	# indir=results/models-v9enfr/aaf-v0020-sched-fr2.5/${testset}
 	# indir=results/models-v9enfr/aaf-v0020-sched-fr3.25/${testset}
 	# indir=results/models-v9enfr/aaf-v0020-sched-fr4.0/${testset}
 
@@ -91,6 +91,7 @@ esac
 	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.0-pretrain-v2/${testset}
 	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.1-pretrain/${testset}
 	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.0-pretrain-lr0.001/${testset}
+	indir=results/models-v9enfr/aaf-v0030-sched-fr3.1-pretrain-lr0.001-smoothKL/${testset}
 
 # indir=results/models-v9enfr/aaf-v0040-paf-nbFrToken20/${testset}
 	# indir=results/models-v9enfr/aaf-v0040-paf/${testset}
@@ -107,7 +108,7 @@ esac
 # indir=results/models-v9enfr/aaf-v0050-oaf-tf1.0/${testset}
 # indir=results/models-v9enfr/aaf-v0050-oaf-tf0.5-alwaysKL/${testset}
 # indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-noKL/${testset}
-indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysKLsmooth1.0/${testset}
+# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysKLsmooth1.0/${testset}
 # indir=results/models-v9enfr/aaf-v0050-oaf-tf0.9-alwaysKLsmooth0.5/${testset}
 # indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysMSE20.0/${testset}
 

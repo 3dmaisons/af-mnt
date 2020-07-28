@@ -36,7 +36,7 @@ cd $EXP_DIR
 export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
-MODE=train # train translate translate_smooth
+MODE=translate # train translate translate_smooth
 # TRANSLATE_EPOCH=1
 
 # FR_MAX=3.1
@@ -50,11 +50,14 @@ FR_MAX=3.0
 # SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-fr${FR_MAX}/
 # SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain/
 # SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-v0/
-SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-asup/
+# SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-asup/
 
 learning_rate=0.001 # 0.002
 # SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-lr${learning_rate}/
 smooth_epochs_str=11_23_29 # 8_11_23
+
+
+SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-lr${learning_rate}-smoothKL/
 
 
 
