@@ -2,33 +2,22 @@
 
 # Batch evaluate bleu score
 
-# command="$0 $@"
-# cmddir=CMDs
-# echo "---------------------------------------------" >> $cmddir/batch_eval_bleu.cmds
-# echo $command >> $cmddir/batch_eval_bleu.cmds
-
-# indir=$1 # ./models-v9new/envi-v0011/iwslt12
-# refdir=$2 # ./lib/iwslt15-ytl/tst2012.vi
-
-# for i in `seq 37 1 50`
-# do
-#         echo $i
-# 	python ./local/py-tools/bleu_scorer.py $1/epoch_$i/translate.txt $2 > $1/epoch_$i/bleu.log
-# done
-
 EXP_DIR=/home/dawna/tts/qd212/models/af
 cd $EXP_DIR
-
 
 # 1.0 setup tools
 SCRIPTS=/home/dawna/tts/qd212/models/af/af-lib/mosesdecoder/scripts
 DETOKENIZER=$SCRIPTS/tokenizer/detokenizer.perl
 BLEU_DETOK=$SCRIPTS/generic/multi-bleu-detok.perl
 
+# 1.05 select mode
+MODE=bleu # bleu diverse_train diverse_translate
+
 # 1.1 select tgt language and testset
-LANGUAGE=fr # fr de
+LANGUAGE=vi # fr de vi
 testset_fr=tst2013 # tst2013 tst2014
 testset_de=tst-COMMON
+testset_vi=tst2012 # tst2012 tst2013
 
 case $LANGUAGE in
 "fr")
@@ -48,7 +37,10 @@ case $LANGUAGE in
 	testset=$testset_de
 	refdir=af-lib/tst-COMMON.de
 	# refdir=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.de
-
+	;;
+"vi")
+	testset=$testset_vi
+	refdir=af-lib/iwslt15-envi-ytl/${testset}.vi
 	;;
 esac
 
@@ -68,11 +60,14 @@ esac
 	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain/${testset}
 	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-asup/${testset}
 	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr0.001/${testset}
+	# indir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr0.001-seed6/${testset}
 	# indir=results/models-v9enfr/aaf-v0004-ss/${testset}
 	# indir=results/models-v9enfr/aaf-v0004-ss-max0.2linear/${testset}
 	# indir=results/models-v9enfr/aaf-v0004-ss-max0.2linear-asup-check/${testset}
 
 # indir=results/models-v9enfr/aaf-v0010-af/${testset}
+	# indir=results/models-v9enfr/aaf-v0013-af/${testset}
+	# indir=results/models-v9enfr/aaf-v0013-af-pretrain/${testset}
 	# indir=results/models-v9enfr/aaf-v0013-af-fixkl/${testset}
 	# indir=results/models-v9enfr/aaf-v0013-aftf/${testset}
 	# indir=results/models-v9enfr/aaf-v0013-aftf-bs128/${testset}
@@ -91,51 +86,124 @@ esac
 	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.0-pretrain-v2/${testset}
 	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.1-pretrain/${testset}
 	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.0-pretrain-lr0.001/${testset}
-	indir=results/models-v9enfr/aaf-v0030-sched-fr3.1-pretrain-lr0.001-smoothKL/${testset}
+	# indir=results/models-v9enfr/aaf-v0030-sched-fr2.5-pretrain-lr0.001-smoothKL/${testset}
+	# indir=results/models-v9enfr/aaf-v0030-sched-fr3.5-pretrain-lr0.001-smoothKL-seed8/${testset}
 
 # indir=results/models-v9enfr/aaf-v0040-paf-nbFrToken20/${testset}
 	# indir=results/models-v9enfr/aaf-v0040-paf/${testset}
 	# indir=results/models-v9enfr/aaf-v0040-paf-nbFrToken5-lr0.001/${testset}
 
 # indir=results/models-v9enfr/aaf-v0050-oaf/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-asup-detach/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-asup-sched/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-asup/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-notf/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-sched/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-gamma50/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf1.0/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.5-alwaysKL/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-noKL/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysKLsmooth1.0/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.9-alwaysKLsmooth0.5/${testset}
-# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysMSE20.0/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-asup-detach/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-asup-sched/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-asup/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-notf/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-tf/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-sched/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-gamma50/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-tf1.0/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.5-alwaysKL/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-noKL/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysKLsmooth1.0/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.9-alwaysKLsmooth0.5/${testset}
+	# indir=results/models-v9enfr/aaf-v0050-oaf-tf0.8-alwaysMSE20.0/${testset}
 
-# indir=results/models-v9enfr/aaf-v0050-aoaf-tf0.8-selectKL2.0/${testset}
-
-
-
+# indir=results/models-v9enfr/aaf-v0050-aoaf-tf0.9-selectKL2.0/${testset}
 
 # indir=results/models-v0ende/v0000-tf-lr0.001/${testset}
 
+# indir=results/models-v0en${LANGUAGE}/v0000-tf-lr0.002/${testset}
+# indir=results/models-v0en${LANGUAGE}/v0001-af-lr0.002/${testset}
+indir=results/models-v0en${LANGUAGE}/v0001-af-pretrain-lr0.001/${testset}
+# indir=results/models-v0en${LANGUAGE}/v0000-tf-pretrain-lr0.001-seed2/${testset}
+# indir=results/models-v0en${LANGUAGE}/v0001-aftf-lr0.002/${testset}
+# indir=results/models-v0en${LANGUAGE}/v0002-aaf-fr3.5-pretrain-lr0.001-seed4/${testset}
+
+# d_arr=(2 4 6 8)
+# ep_arr=(8 7 16 9 21)
+# tmp_dir=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr0.001
+# ep_arr=(15 9 24 15 7)
+# tmp_dir=results/models-v9enfr/aaf-v0030-sched-fr3.0-pretrain-lr0.001-smoothKL
+
+d_arr=(8)
+ep_arr=(24 29)
+tmp_dir=results/models-v9enfr/aaf-v0030-sched-fr3.5-pretrain-lr0.001-smoothKL
+
+# ep_arr=(22 9 24 30 12)
+# tmp_dir=results/models-v0en${LANGUAGE}/v0000-tf-pretrain-lr0.001
+# ep_arr=(26 22 17 30 22)
+# tmp_dir=results/models-v0en${LANGUAGE}/v0002-aaf-fr3.5-pretrain-lr0.001
+
+for i in ${!d_arr[@]}; do
+	d_arr[$i]=${EXP_DIR}/${tmp_dir}-seed${d_arr[${i}]}/${testset}/epoch_${ep_arr[${i}]}
+done
+if [ -d ${tmp_dir}/${testset} ]; then
+	d_arr+=(${EXP_DIR}/${tmp_dir}/${testset}/epoch_${ep_arr[-1]})
+else
+	d_arr+=(${EXP_DIR}/${tmp_dir}-seed16/${testset}/epoch_${ep_arr[-1]})
+fi
 
 
 # 2.0 detok and bleu
 FILE_TXT=translate-DETOK.txt
 FILE_BLEU=bleu-DETOK.log
+FILE_DIVERSE=diverse-DETOK.log
 
 trap "exit" INT
-for d in ${EXP_DIR}/${indir}/*; do
-	if [ ! -f ${d}/${FILE_TXT} ]; then
-	echo detok, saving to ${d}/${FILE_TXT}
-	perl ${DETOKENIZER} -l ${LANGUAGE} < ${d}/translate.txt > ${d}/translate-DETOK.txt
-	fi
-	if [ ! -f ${d}/${FILE_BLEU} ]; then
-	echo BLEU score, saving to ${d}/${FILE_BLEU}
-	perl ${BLEU_DETOK} ${refdir} < ${d}/${FILE_TXT} > ${d}/${FILE_BLEU}
-	fi
-done
+case $MODE in
+"bleu")
+	for d in ${EXP_DIR}/${indir}/*; do
+		if [ ! -f ${d}/${FILE_TXT} ]; then
+		echo detok, saving to ${d}/${FILE_TXT}
+		perl ${DETOKENIZER} -l ${LANGUAGE} < ${d}/translate.txt > ${d}/translate-DETOK.txt
+		fi
+		if [ ! -f ${d}/${FILE_BLEU} ]; then
+		echo BLEU score, saving to ${d}/${FILE_BLEU}
+		perl ${BLEU_DETOK} ${refdir} < ${d}/${FILE_TXT} > ${d}/${FILE_BLEU}
+		fi
+	done
+;;
+"diverse_train")
+	for d_gen in ${d_arr[@]}; do
+		echo gen $d_gen > ${d_gen}/${FILE_DIVERSE}
+		for d_ref in ${d_arr[@]}; do
+			if [ ! -f ${d_gen}/${FILE_TXT} ]; then
+			echo detok, saving to ${d_gen}/${FILE_TXT}
+			perl ${DETOKENIZER} -l ${LANGUAGE} < ${d_gen}/translate.txt > ${d_gen}/translate-DETOK.txt
+			fi
+			if [ ! -f ${d_ref}/${FILE_TXT} ]; then
+			echo detok, saving to ${d_ref}/${FILE_TXT}
+			perl ${DETOKENIZER} -l ${LANGUAGE} < ${d_ref}/translate.txt > ${d_ref}/translate-DETOK.txt
+			fi
+			# if [ ! -f ${d_gen}/${FILE_DIVERSE} ]; then
+			echo ref $d_ref >> ${d_gen}/${FILE_DIVERSE}
+			echo BLEU score, saving to ${d_gen}/${FILE_DIVERSE}
+			perl ${BLEU_DETOK} ${d_ref}/${FILE_TXT} < ${d_gen}/${FILE_TXT} >> ${d_gen}/${FILE_DIVERSE}
+			# fi
+		done
+	done
+;;
+"diverse_translate")
+	FILE_DIVERSE=diverse-translate-DETOK.log
+	for d_gen in ${d_arr[@]}; do
+		for i in {0..4}; do
+			FILE_TXT=translate-run${i}-DETOK.txt
+			if [ ! -f ${d_gen}/${FILE_TXT} ]; then
+			echo detok, saving to ${d_gen}/${FILE_TXT}
+			perl ${DETOKENIZER} -l ${LANGUAGE} < ${d_gen}/translate-run${i}.txt > ${d_gen}/${FILE_TXT}
+			fi
+		done
+		for i_gen in {0..4}; do
+			FILE_TXT_GEN=translate-run${i_gen}-DETOK.txt
+			for i_ref in {0..4}; do
+				FILE_TXT_REF=translate-run${i_ref}-DETOK.txt
+				echo BLEU score, saving to ${d_gen}/${FILE_DIVERSE}
+				perl ${BLEU_DETOK} ${d_gen}/${FILE_TXT_REF} < ${d_gen}/${FILE_TXT_GEN} >> ${d_gen}/${FILE_DIVERSE}
+			done
+		done
+	done
+;;
+esac
 
 
 # previous version of BLEU scorer, taking tokenized txt as input
@@ -148,43 +216,3 @@ done
 # 	python /home/dawna/tts/qd212/models/af/bleu_scorer.py $d/${FILE_TXT} $refdir > $d/${FILE_BLEU}
 # 	fi
 # done
-
-
-# bkup
-
-# # for d in ${EXP_DIR}/${indir}/*; do
-# # 	if [ ! -f ${d}/translate-DETOK.txt ]; then
-# # 	echo dir $d
-# # 	perl ${DETOKENIZER} -l ${LANGUAGE} < ${d}/translate.txt > ${d}/translate-DETOK.txt
-# # 	fi
-# # done
-
-# FILE_TXT=translate-DETOK.txt
-# FILE_BLEU=bleu-DETOK.log
-# for d in ${EXP_DIR}/${indir}/*; do
-# 	# if [ ! -f ${d}/${FILE_BLEU} ]; then
-# 	echo saving to ${d}/${FILE_BLEU}
-# 	perl ${BLEU_DETOK} ${refdir} < ${d}/${FILE_TXT} > ${d}/${FILE_BLEU}
-# 	# fi
-# done
-
-
-# for i in 4 10 20 30
-# do
-# 	echo epoch $i of $indir
-# 	python /home/dawna/tts/qd212/models/af/bleu_scorer.py $indir/epoch_$i/translate.txt $refdir > $indir/epoch_$i/bleu.log
-# done
-
-
-# asup
-
-# prefix=iwslt15-enfr
-# event=IWSLT15
-# testset=tst2013
-
-# # prefix=en-fr-2015
-# # event=IWSLT16
-# # testset=tst2014
-
-# # refdir=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
-# refdir=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.DETOK.fr

@@ -115,6 +115,7 @@ def translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_widt
 	model.check_classvar('attention_forcing')
 	model.check_classvar('num_unilstm_enc')
 	model.check_classvar('residual')
+	model.check_classvar('flag_greedy')
 	model.set_var('debug_count', 0)	
 	model.to(device)
 
@@ -176,6 +177,107 @@ def translate(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_widt
 					f.write('{}\n'.format(outline))
 					# if i == 0: 
 					# 	print(outline)
+				sys.stdout.flush()
+
+
+def translate_diverse(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, smooth_epochs_str='', nb_run=5):
+
+	""" 
+		no reference tgt given - Run translation.
+		Args:
+			test_set: test dataset
+				src, tgt using the same dir
+			test_path_out: output dir
+			load_dir: model dir
+			use_gpu: on gpu/cpu
+	"""
+
+	# load model
+	if smooth_epochs_str=='':
+		model = load_model_single(load_dir)
+	else:
+		model = load_model_multi(load_dir, smooth_epochs_str)
+	
+	print('Model dir: {}'.format(load_dir+smooth_epochs_str))
+	print('Model loaded')
+
+	# reset batch_size:
+	model.reset_max_seq_len(max_seq_len)
+	model.reset_use_gpu(use_gpu)	
+	model.reset_batch_size(test_set.batch_size)	
+	model.check_classvar('attention_forcing')
+	model.check_classvar('num_unilstm_enc')
+	model.check_classvar('residual')
+	model.check_classvar('flag_greedy')
+	model.set_var('debug_count', 0)
+	model.set_var('flag_greedy', False)
+	model.to(device)
+
+	print('max seq len {}'.format(model.max_seq_len))
+	sys.stdout.flush()
+
+	# load test
+	test_batches, vocab_size = test_set.construct_batches(is_train=False)
+
+	model.eval()
+	match = 0
+	total = 0
+	with torch.no_grad():
+		for batch in test_batches:
+
+			src_ids = batch['src_word_ids']
+			src_lengths = batch['src_sentence_lengths']
+			src_probs = None
+			if 'src_ddfd_probs' in batch:
+				src_probs =  batch['src_ddfd_probs']
+				src_probs = _convert_to_tensor(src_probs, use_gpu).unsqueeze(2)			
+
+			src_ids = _convert_to_tensor(src_ids, use_gpu)
+
+			tmp = []
+			for idx_run in range(nb_run):
+				decoder_outputs, decoder_hidden, other = model(src=src_ids, 
+																is_training=False,
+																att_key_feats=src_probs, 
+																beam_width=beam_width)
+				# memory usage
+				mem_kb, mem_mb, mem_gb = get_memory_alloc()
+				mem_mb = round(mem_mb, 2)
+				print('Memory used: {0:.2f} MB'.format(mem_mb))
+				
+				# write to file
+				seqlist = other['sequence']
+				seqwords = _convert_to_words(seqlist, test_set.tgt_id2word)
+
+				# print(seqwords[0][:10])
+				# print(seqwords==tmp)
+				# tmp=seqwords
+				# print(os.path.join(test_path_out, f'translate-run{idx_run}.txt'))
+				# import pdb; pdb.set_trace()
+				
+				with open(os.path.join(test_path_out, f'translate-run{idx_run}.txt'), 'a', encoding="utf8") as f:
+					for i in range(len(seqwords)):
+						# skip padding sentences in batch (num_sent % batch_size != 0)
+						if src_lengths[i] == 0:
+							continue
+						words = []
+						for word in seqwords[i]:
+							if word == '<pad>':
+								continue
+							elif word == '<spc>':
+								words.append(' ')
+							elif word == '</s>':
+								break
+							else:
+								words.append(word)
+						if len(words) == 0:
+							outline = ''
+						else:
+							if test_set.use_type == 'word':
+								outline = ' '.join(words)
+							elif test_set.use_type == 'char':
+								outline = ''.join(words)
+						f.write('{}\n'.format(outline))
 				sys.stdout.flush()
 
 
@@ -971,7 +1073,7 @@ def att_plot(test_set, load_dir, plot_path, use_gpu, max_seq_len, beam_width, us
 	print(accuracy)
 
 
-def print_attscore(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher):
+def print_attscore(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher, smooth_epochs_str=''):
 
 	""" 
 		MODE = 6
@@ -987,12 +1089,15 @@ def print_attscore(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam
 	# load model
 	# latest_checkpoint_path = Checkpoint.get_latest_checkpoint(load_dir)
 	# latest_checkpoint_path = Checkpoint.get_thirdlast_checkpoint(load_dir)
-	latest_checkpoint_path = load_dir
-	resume_checkpoint = Checkpoint.load(latest_checkpoint_path)
+	# latest_checkpoint_path = load_dir
+	# resume_checkpoint = Checkpoint.load(latest_checkpoint_path)
+	if smooth_epochs_str=='':
+		model = load_model_single(load_dir)
+	else:
+		model = load_model_multi(load_dir, smooth_epochs_str)
 
-	model = resume_checkpoint.model
-	print('Model dir: {}'.format(latest_checkpoint_path))
-	print('Model laoded')
+	print('Model dir: {}'.format(load_dir+smooth_epochs_str))
+	print('Model loaded')
 
 	# reset batch_size:
 	model.reset_max_seq_len(max_seq_len)
@@ -1022,7 +1127,7 @@ def print_attscore(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam
 
 	# record config
 	f = open(os.path.join(test_path_out, 'conf.log'), 'w')
-	f.write('Model dir: {}\n'.format(latest_checkpoint_path))
+	f.write('Model dir: {}\n'.format(load_dir+smooth_epochs_str)) # latest_checkpoint_path
 	f.write('is training: {}\n'.format(is_training))
 	f.write('teacher forcing mode: {}\n'.format(use_teacher))
 	f.write('attention forcing mode: {}\n'.format(model.attention_forcing))
@@ -1101,6 +1206,126 @@ def print_attscore(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam
 	np.save(os.path.join(test_path_out, 'att_score.npy'), att_scores_arr)
 	f.write('recorded matrice shape: {}'.format(att_scores_arr.shape))
 	f.close()
+
+
+def print_entropy(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher, smooth_epochs_str=''):
+
+	""" 
+		MODE = 10
+		no reference tgt given - Run translation.
+		Args:
+			test_set: test dataset
+				src, tgt using the same dir
+			test_path_out: output dir
+			load_dir: model dir
+			use_gpu: on gpu/cpu
+	"""
+	from torch.distributions import Categorical
+	def get_entropy(decoder_outputs, mask):
+		decoder_outputs = torch.stack(decoder_outputs, dim=1) # B * T_out-1 * vocab_size
+		decoder_outputs_entropy = Categorical(logits = decoder_outputs).entropy() # B * T_out-1
+		# implementation of cross entropy
+		# tmp = - torch.exp(decoder_outputs) * decoder_outputs
+		# tmp = torch.sum(tmp, dim=-1)
+		# print('mean', torch.mean(tmp))
+		# import pdb; pdb.set_trace()
+		return torch.sum(decoder_outputs_entropy * mask).data.cpu().numpy()
+
+	# load model
+	if smooth_epochs_str=='':
+		model = load_model_single(load_dir)
+	else:
+		model = load_model_multi(load_dir, smooth_epochs_str)
+
+	print('Model dir: {}'.format(load_dir+smooth_epochs_str))
+	print('Model loaded')
+
+	# reset batch_size:
+	model.reset_max_seq_len(max_seq_len)
+	model.reset_use_gpu(use_gpu)	
+	model.reset_batch_size(test_set.batch_size)	
+	model.check_classvar('attention_forcing')
+	model.check_classvar('num_unilstm_enc')
+	model.check_classvar('residual')
+	model.check_classvar('flag_greedy')
+	model.set_var('debug_count', 0)
+	model.set_var('attention_forcing', False) # in print att mode always False
+	print('max seq len {}'.format(model.max_seq_len))
+	sys.stdout.flush()
+
+	# load trainset
+	# remove too long sentences (no further #sent reduction before batchify)
+	# note: final unfull batch ignored during batchify - after zipped with srcids
+	test_batches, vocab_size = test_set.construct_batches(is_train=False)
+
+	# ===================================================================[config] 
+	# ----- can be changed ---------- 
+	is_training = True # True or False:turn off both tf and af
+	# ------------------------------- 
+	if use_teacher:
+		teacher_forcing_ratio = 1.0 # teacher forcing or not 
+	else:
+		teacher_forcing_ratio = 0.0
+
+	# record config
+	# f = open(os.path.join(test_path_out, 'conf.log'), 'w')
+	# f.write('Model dir: {}\n'.format(load_dir+smooth_epochs_str)) # latest_checkpoint_path
+	# f.write('is training: {}\n'.format(is_training))
+	# f.write('teacher forcing mode: {}\n'.format(use_teacher))
+	# f.write('attention forcing mode: {}\n'.format(model.attention_forcing))
+	# f.write('max_seq_len: {}\n'.format(model.max_seq_len))
+	# ===================================================================
+
+	model.eval()
+	match = 0
+	total = 0
+	entropy_lst, nb_token = [], 0
+	with torch.no_grad():
+		for idx in range(len(test_batches)):
+
+			batch = test_batches[idx]
+			src_ids = batch['src_word_ids']
+			src_lengths = batch['src_sentence_lengths']
+			tgt_ids = batch['tgt_word_ids']
+			tgt_lengths = batch['tgt_sentence_lengths']
+			src_probs = None
+			if 'src_ddfd_probs' in batch:
+				src_probs =  batch['src_ddfd_probs']
+				src_probs = _convert_to_tensor(src_probs, use_gpu).unsqueeze(2)			
+
+			src_ids = _convert_to_tensor(src_ids, use_gpu)
+			tgt_ids = _convert_to_tensor(tgt_ids, use_gpu)
+
+			decoder_outputs, decoder_hidden, other = model(src=src_ids, tgt=tgt_ids,
+															is_training=is_training,
+															teacher_forcing_ratio=teacher_forcing_ratio,
+															att_key_feats=src_probs,
+															beam_width=beam_width)
+			# memory usage
+			mem_kb, mem_mb, mem_gb = get_memory_alloc()
+			mem_mb = round(mem_mb, 2)
+			if idx % 500 == 0:
+				print('Memory used: {0:.2f} MB'.format(mem_mb))
+			sys.stdout.flush()
+
+			# get entropy
+			seqlist = other['sequence']
+			seqwords = _convert_to_words(seqlist, test_set.tgt_id2word)
+			mask = torch.from_numpy(np.array(seqwords)!='<pad>').int().float().to(device)
+			entropy_lst.append(get_entropy(decoder_outputs, mask))
+			nb_token += torch.sum(mask)
+
+			# print(len(seqlist), len(seqwords))
+			# print(seqwords[1], mask[1])
+			# import pdb; pdb.set_trace()
+
+	entropy = np.sum(np.array(entropy_lst)) / nb_token.data.cpu().numpy()
+	print(f'entropy {entropy:.4f}')
+	print(f'entropy {entropy:.4f}', file=open(os.path.join(test_path_out, 'entropy.txt'), "w"))
+	# import pdb; pdb.set_trace()
+	# np.save(os.path.join(test_path_out, 'entropy.npy'), entropy)
+	# f.write('recorded matrice shape: {}'.format(att_scores_arr.shape))
+	# f.close()
 
 
 def print_klloss(test_set, load_dir_af, load_dir_tf, test_path_out, use_gpu, max_seq_len, beam_width, gen_mode='afdynamic'):
@@ -1516,7 +1741,7 @@ def main():
 		use_gpu = False
 
 	if MODE == 6: 
-		max_seq_len = 64 # same as in training
+		# max_seq_len = 64 # same as in training
 		# max_seq_len = 200 # or same as in evaluation
 		# batch_size = 3
 		beam_width = 1
@@ -1553,8 +1778,11 @@ def main():
 		att_plot(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher)
 
 	elif MODE == 6:
+		import pdb
+		print(test_path_out)
+		pdb.set_trace()
 		# write att ref scores
-		print_attscore(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher)
+		print_attscore(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher, smooth_epochs_str=smooth_epochs_str)
 
 	elif MODE == 7: 
 		translate_att_forcing(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher)
@@ -1564,6 +1792,10 @@ def main():
 
 	elif MODE == 9: 
 		record_klloss(test_set, load_dir_af, load_dir_tf, test_path_out, use_gpu, max_seq_len, beam_width, gen_mode)
+
+	elif MODE == 10:
+		print_entropy(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, use_teacher, smooth_epochs_str=smooth_epochs_str)
+		# translate_diverse(test_set, load_dir, test_path_out, use_gpu, max_seq_len, beam_width, smooth_epochs_str=smooth_epochs_str, nb_run=5)
 
 
 if __name__ == '__main__':

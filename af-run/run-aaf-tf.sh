@@ -38,9 +38,13 @@ export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 # ------------------------ CONFIG --------------------------
 # ------------------------ data --------------------------
-task=enfr # enfr ende
-testset_fr=tst2013 # tst2013 tst2014
-testset_de=tst-COMMON # tst2013 tst2014
+task=envi # enfr ende envi
+testset_fr=tst2014 # tst2013 tst2014
+testset_de=tst-COMMON
+testset_vi=tst2013 # tst2012 tst2013
+
+# for testset_fr in tst2013 tst2014; do
+for testset_vi in tst2012 tst2013; do
 
 ### parse config
 case $task in
@@ -76,11 +80,23 @@ case $task in
   test_path_src=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.BPE.en
   test_path_tgt=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.de
   ;;
+"envi")
+  use_type=word
+  train_path_src=af-lib/iwslt15-envi-ytl/train.en
+  train_path_tgt=af-lib/iwslt15-envi-ytl/train.vi
+  path_vocab_src=af-lib/iwslt15-envi-ytl/vocab.en
+  path_vocab_tgt=af-lib/iwslt15-envi-ytl/vocab.vi
+
+  testset=$testset_vi
+  test_path_src=af-lib/iwslt15-envi-ytl/${testset}.en
+  test_path_tgt=af-lib/iwslt15-envi-ytl/${testset}.vi
+  ;;
 esac
 
 # ------------------------ model & mode --------------------------
-MODE=train # train translate translate_smooth
-smooth_epochs_str=7_16_21 # 9_13_17
+MODE=gen_diversity # train translate translate_smooth gen_att gen_diversity
+smooth_epochs_str=15_20_29 # 9_13_17 7_16_21 15_20_29
+TRANSLATE_EPOCH=22
 
 ### dir & task-specific setting
 case $task in
@@ -104,10 +120,20 @@ case $task in
     max_seq_len=900
   fi
   ;;
+"envi")
+  SAVE_DIR_BASE=results/models-v0envi
+  load_tf=results/models-v0envi/v0000-tf-lr0.002/checkpoints_epoch/29
+  if [ "$MODE" == "train" ] || [ "$MODE" == "gen_att" ]; then
+    max_seq_len=80
+  else
+    max_seq_len=300
+  fi
+  ;;
 esac
 
 ### training
-learning_rate=0.002 # 0.002 0.001
+random_seed=16
+learning_rate=0.001 # 0.002 0.001
 
 ### saving
 # SAVE_DIR=results/models-v9enfr/aaf-v0002-tf/
@@ -116,10 +142,22 @@ learning_rate=0.002 # 0.002 0.001
 # SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-asup/
 # SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr${learning_rate}/
 echo batch_size is 50, not 128, for comparison with AF!!!
-SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-asup/
+# SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-asup/
 # SAVE_DIR=results/models-v9enfr/aaf-v0003-tf-checkRunAway/
 
+# random_seed=16 # 2 4 6 8 16
+# SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr${learning_rate}/
+# SAVE_DIR=results/models-v9enfr/aaf-v0002-tf-bs50-pretrain-lr${learning_rate}-seed${random_seed}/
+
+# new dataset
+random_seed=2 # 2 4 6 8 16
+# learning_rate=0.002 # 0.002 0.001
 # SAVE_DIR=${SAVE_DIR_BASE}/v0000-tf-lr${learning_rate}/
+
+learning_rate=0.001 # 0.002 0.001
+# SAVE_DIR=${SAVE_DIR_BASE}/v0000-tf-pretrain-lr${learning_rate}/
+SAVE_DIR=${SAVE_DIR_BASE}/v0000-tf-pretrain-lr${learning_rate}-seed${random_seed}/
+
 
 
 # ------------------------ RUN MODEL --------------------------
@@ -134,7 +172,7 @@ case $MODE in
       --train_path_tgt $train_path_tgt \
       --path_vocab_src $path_vocab_src \
       --path_vocab_tgt $path_vocab_tgt \
-      --random_seed 16 \
+      --random_seed $random_seed \
       --embedding_size_enc 200 \
       --embedding_size_dec 200 \
       --hidden_size_enc 200 \
@@ -214,7 +252,8 @@ done
     fi
     ;;
 "gen_att")
-    test_path_out=${SAVE_DIR}trainset/epoch_${TRANSLATE_EPOCH}/
+    # test_path_out=${SAVE_DIR}trainset/epoch_${TRANSLATE_EPOCH}/
+    test_path_out=${SAVE_DIR}trainset/epoch_smooth_${smooth_epochs_str}/
     echo MODE: $MODE, save to $test_path_out
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
       --test_path_src $train_path_src \
@@ -229,6 +268,33 @@ done
       --beam_width 1 \
       --use_teacher True \
       --mode 6 \
+      --smooth_epochs_str $smooth_epochs_str
+    ;;
+"gen_diversity")
+trap "exit" INT
+# for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/4*; do
+#     TRANSLATE_EPOCH=$(basename $f)
+    test_path_out=${SAVE_DIR}${testset}/epoch_${TRANSLATE_EPOCH}/
+    if [ ! -f "${test_path_out}entropy666.txt" ]; then
+    echo MODE: $MODE, save to $test_path_out
+    $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
+        --test_path_src $test_path_src \
+        --test_path_tgt $test_path_tgt \
+        --path_vocab_src $path_vocab_src \
+        --path_vocab_tgt $path_vocab_tgt \
+        --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
+        --test_path_out $test_path_out \
+        --max_seq_len $max_seq_len \
+        --batch_size 50 \
+        --use_gpu True \
+        --beam_width 1 \
+        --use_type $use_type \
+        --mode 10
+        # --use_teacher False \
+        # --mode 2 \
+        # --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy \
+    fi
+# done
     ;;
 esac
 
@@ -236,7 +302,7 @@ esac
 
 
 
-
+done # loop over testset
 
 
 

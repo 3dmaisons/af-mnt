@@ -36,56 +36,142 @@ cd $EXP_DIR
 export PYTHONBIN=/home/mifs/ytl28/anaconda3/envs/py13-cuda9/bin/python3
 
 
-MODE=translate # train translate translate_smooth
-# TRANSLATE_EPOCH=1
+# ------------------------ CONFIG --------------------------
+# ------------------------ data --------------------------
+task=envi # enfr ende
+testset_fr=tst2014 # tst2013 tst2014
+testset_de=tst-COMMON # tst2013 tst2014
+testset_vi=tst2013 # tst2012 tst2013
 
+# for testset_fr in tst2013 tst2014; do
+for testset_vi in tst2012 tst2013; do
+
+### parse config
+case $task in
+"enfr")
+  use_type=word
+  train_path_src=af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.en
+  train_path_tgt=af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.fr
+  path_vocab_src=af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en
+  path_vocab_tgt=af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr
+
+  testset=$testset_fr
+  case $testset in
+  "tst2014")
+    prefix=en-fr-2015
+    event=IWSLT16
+    ;;
+  "tst2013")
+    prefix=iwslt15-enfr
+    event=IWSLT15
+    ;;
+  esac
+  test_path_src=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.en
+  test_path_tgt=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
+  ;;
+"ende")
+  use_type=char
+  train_path_src=af-lib/mustc-en-de/train/train.BPE.en
+  train_path_tgt=af-lib/mustc-en-de/train/train.de
+  path_vocab_src=af-lib/mustc-en-de/vocab.en
+  path_vocab_tgt=af-lib/mustc-en-de/vocab.de.char.trim
+
+  testset=$testset_de
+  test_path_src=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.BPE.en
+  test_path_tgt=af-lib/mustc-en-de/tst-COMMON/tst-COMMON.de
+  ;;
+"envi")
+  use_type=word
+  train_path_src=af-lib/iwslt15-envi-ytl/train.en
+  train_path_tgt=af-lib/iwslt15-envi-ytl/train.vi
+  path_vocab_src=af-lib/iwslt15-envi-ytl/vocab.en
+  path_vocab_tgt=af-lib/iwslt15-envi-ytl/vocab.vi
+
+  testset=$testset_vi
+  test_path_src=af-lib/iwslt15-envi-ytl/${testset}.en
+  test_path_tgt=af-lib/iwslt15-envi-ytl/${testset}.vi
+  ;;
+esac
+
+# ------------------------ model & mode --------------------------
+MODE=gen_diversity # train translate translate_smooth gen_diversity
+smooth_epochs_str=4_6_7 # 3_5_7 3_4_5_6_7 24_28_33
+TRANSLATE_EPOCH=26
+
+### dir
+case $task in
+"enfr")
+  SAVE_DIR_BASE=results/models-v9enfr
+  load_tf=results/models-v9enfr/aaf-v0013-aftf/checkpoints_epoch/28
+  train_attscore_path=af-models/tf/trainset/epoch_24/att_score.npy
+  if [ "$MODE" == "train" ]; then
+    max_seq_len=64
+  else
+    max_seq_len=200
+  fi
+  ;;
+"ende")
+  SAVE_DIR_BASE=results/models-v0ende
+  load_tf=None
+  train_attscore_path=None
+  if [ "$MODE" == "train" ]; then
+    max_seq_len=300
+  else
+    max_seq_len=900
+  fi
+  ;;
+"envi")
+  SAVE_DIR_BASE=results/models-v0envi
+  load_tf=results/models-v0envi/v0000-tf-lr0.002/checkpoints_epoch/29
+  train_attscore_path=results/models-v0envi/v0000-tf-lr0.002/trainset/epoch_smooth_15_20_29/att_score.npy
+  if [ "$MODE" == "train" ] || [ "$MODE" == "gen_att" ]; then
+    max_seq_len=80
+  else
+    max_seq_len=300
+  fi
+  ;;
+esac
+
+### exp
 # FR_MAX=3.1
 # smooth_epochs_str=6_7_8
-
-FR_MAX=3.0
+# FR_MAX=3.0
 # smooth_epochs_str=5_7_11 # 5_7_11 5_6_7_8_9_10_11
 # FR_MAX=2.0
 # smooth_epochs_str=4_5_7 # 4_5_7 3_4_5_6_7
 
 # SAVE_DIR=results/models-v9enfr/aaf-v0020-sched-fr${FR_MAX}/
-# SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain/
-# SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-v0/
-# SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-asup/
+  # SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain/
+  # SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-v0/
+  # SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-asup/
 
 learning_rate=0.001 # 0.002
 # SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-lr${learning_rate}/
-smooth_epochs_str=11_23_29 # 8_11_23
+# smooth_epochs_str=11_23_29 # 8_11_23
+
+# random_seed=8 # 2 4 6 8 16
+# FR_MAX=3.5
+# SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-lr${learning_rate}-smoothKL/
+# SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-lr${learning_rate}-smoothKL-seed${random_seed}/
+
+# new dataset
+random_seed=2 # 2 4 6 8 16
+FR_MAX=3.5 # 2.0 2.5 3.0 3.5 4.0
+SAVE_DIR=${SAVE_DIR_BASE}/v0002-aaf-fr${FR_MAX}-pretrain-lr${learning_rate}-seed${random_seed}/
 
 
-SAVE_DIR=results/models-v9enfr/aaf-v0030-sched-fr${FR_MAX}-pretrain-lr${learning_rate}-smoothKL/
-
-
-
-testset=tst2014 # tst2013 tst2014
-case $testset in
-"tst2014")
-  prefix=en-fr-2015
-  event=IWSLT16
-  ;;
-"tst2013")
-  prefix=iwslt15-enfr
-  event=IWSLT15
-  ;;
-esac
-test_path_src=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.en
-test_path_tgt=af-lib/${prefix}/iwslt15_en_fr/${event}.TED.${testset}.en-fr.fr
-
+# ------------------------ RUN MODEL --------------------------
 case $MODE in
 "train")
     echo MODE: train
     # --dev_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.en \
     # --dev_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/IWSLT15.TED.tst2012.en-fr.fr \
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/train.py \
-      --train_path_src af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.en \
-      --train_path_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/train.tags.en-fr.fr \
-      --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
-      --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
-      --random_seed 16 \
+      --train_path_src $train_path_src \
+      --train_path_tgt $train_path_tgt \
+      --path_vocab_src $path_vocab_src \
+      --path_vocab_tgt $path_vocab_tgt \
+      --random_seed $random_seed \
       --embedding_size_enc 200 \
       --embedding_size_dec 200 \
       --hidden_size_enc 200 \
@@ -99,7 +185,7 @@ case $MODE in
       --residual True \
       --hidden_size_shared 200 \
       --dropout 0.2 \
-      --max_seq_len 64 \
+      --max_seq_len $max_seq_len \
       --batch_size 50 \
       --batch_first True \
       --eval_with_mask False \
@@ -116,8 +202,8 @@ case $MODE in
       --attention_forcing True \
       --attention_loss_coeff 10.0 \
       --save $SAVE_DIR \
-      --load_tf results/models-v9enfr/aaf-v0013-aftf/checkpoints_epoch/28 \
-      --train_attscore_path af-models/tf/trainset/epoch_24/att_score.npy \
+      --load_tf $load_tf \
+      --train_attscore_path $train_attscore_path \
       --fr_loss_max_rate ${FR_MAX} \
       --ep_aaf_start 1 \
       2>&1 | tee ${EXP_DIR}/${SAVE_DIR}log.txt
@@ -143,8 +229,8 @@ for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/*; do
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
         --test_path_src $test_path_src \
         --test_path_tgt $test_path_tgt \
-        --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
-        --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
+        --path_vocab_src $path_vocab_src \
+        --path_vocab_tgt $path_vocab_tgt \
         --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
         --test_path_out $test_path_out \
         --max_seq_len 200 \
@@ -164,8 +250,8 @@ done
     $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
         --test_path_src $test_path_src \
         --test_path_tgt $test_path_tgt \
-        --path_vocab_src af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.en \
-        --path_vocab_tgt af-lib/iwslt15-enfr/iwslt15_en_fr/dict.50k.fr \
+        --path_vocab_src $path_vocab_src \
+        --path_vocab_tgt $path_vocab_tgt \
         --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
         --test_path_out $test_path_out \
         --max_seq_len 200 \
@@ -178,12 +264,38 @@ done
         --smooth_epochs_str $smooth_epochs_str
     fi
     ;;
+"gen_diversity")
+trap "exit" INT
+# for f in ${EXP_DIR}/${SAVE_DIR}/checkpoints_epoch/4*; do
+#     TRANSLATE_EPOCH=$(basename $f)
+    test_path_out=${SAVE_DIR}${testset}/epoch_${TRANSLATE_EPOCH}/
+    if [ ! -f "${test_path_out}entropy666.txt" ]; then
+    echo MODE: $MODE, save to $test_path_out
+    $PYTHONBIN /home/dawna/tts/qd212/models/af/af-scripts/translate.py \
+        --test_path_src $test_path_src \
+        --test_path_tgt $test_path_tgt \
+        --path_vocab_src $path_vocab_src \
+        --path_vocab_tgt $path_vocab_tgt \
+        --load ${SAVE_DIR}checkpoints_epoch/${TRANSLATE_EPOCH} \
+        --test_path_out $test_path_out \
+        --max_seq_len $max_seq_len \
+        --batch_size 50 \
+        --use_gpu True \
+        --beam_width 1 \
+        --use_type $use_type \
+        --mode 10
+        # --use_teacher False \
+        # --mode 2 \
+        # --test_attscore_path af-models/tf/tst2012-attscore/epoch_24/att_score.npy \
+    fi
+# done
+    ;;
 esac
 
 
 
 
-
+done # loop over testset
 
 
 

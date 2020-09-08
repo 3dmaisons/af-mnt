@@ -11,6 +11,8 @@ from utils.config import PAD, EOS, BOS
 from utils.misc import get_base_hidden, _inflate, inflat_hidden_state
 from utils.dataset import load_pretrained_embedding
 
+from torch.distributions import Categorical
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -56,7 +58,8 @@ class Seq2Seq_DD(nn.Module):
 		use_gpu=False,
 		additional_key_size=0,
 		attention_forcing=False,
-		flag_stack_outputs=False
+		flag_stack_outputs=False,
+		flag_greedy=True
 		):
 
 		super(Seq2Seq_DD, self).__init__()
@@ -187,6 +190,7 @@ class Seq2Seq_DD(nn.Module):
 		self.out = nn.Linear(self.hidden_size_shared , self.vocab_size_dec, bias=True)
 
 		self.flag_stack_outputs = flag_stack_outputs
+		self.flag_greedy = flag_greedy
 
 
 	def reset_dropout(self, dropout_rate):
@@ -253,6 +257,8 @@ class Seq2Seq_DD(nn.Module):
 				var_val = 0
 			elif var_name == 'residual':
 				var_val = False
+			elif var_name == 'flag_greedy':
+				var_val = True
 			else:
 				var_val = None
 
@@ -360,13 +366,20 @@ class Seq2Seq_DD(nn.Module):
 					step_output: log predicted_softmax [batch_size, 1, vocab_size_dec]
 					step_attn: attention scores - (batch_size x tgt_len(query_len) x src_len(key_len)
 				Returns:
-					symbols: most probable symbol_id [batch_size, 1]
+					symbols: most probable symbol_id [batch_size, 1] if flag_greedy==True
 			"""
 
 			ret_dict[KEY_ATTN_SCORE].append(step_attn)
 			decoder_outputs.append(step_output)
-			symbols = decoder_outputs[-1].topk(1)[1]
+			if self.flag_greedy:
+				symbols = decoder_outputs[-1].topk(1)[1]
+			else:
+				symbols = Categorical(logits=decoder_outputs[-1]).sample().unsqueeze(1)
 			sequence_symbols.append(symbols)
+
+			# print(decoder_outputs[-1].size(), decoder_outputs[-1][0])
+			# print(symbols.size(), symbols[0])
+			# import pdb; pdb.set_trace()
 			# print(symbols)
 			# input('...')
 
