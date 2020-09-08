@@ -9,6 +9,10 @@ af-scripts/asup.py
 */.ipynb_checkpoints
 
 af-lib/mosesdecoder/
+af-lib/iwslt15-envi-ytl/
+af-lib/mustc-en-de/
+af-lib/mustc-v2-prep/
+af-lib/tst-COMMON.de
 
 af-models/
 af-run/asup/
